@@ -20,13 +20,11 @@ if (!"MASS" %in% rownames(installed.packages())){
 ##############################################################################
 
 # specify root paths:
-wd = "H:/2018_03_16_GRWL_Manuscript/git/RSSA/"
+wd = "/Users/geoallen/Documents/research/2018_01_08_Science_submission_GRWL/git/RSSA/"
 outPath = paste0(wd, 'output/GRWL/GRWL_by_hydroBASIN/')
-pdfOut =  paste0(wd, 'output/figs/fig3_SAfits_20basins.pdf')
+pdfOut =  paste0(wd, 'output/figs/figS6_ClassA.pdf')
 tabDirPath = paste0(wd, 'output/tabs/')
 nGRWLperBasinOutPath = paste0(tabDirPath, "nGRWLperBasinTab/nGRWLperBas.csv")
-mnTabP = paste0(wd, 'output/figs/fig3_SAfits_20basins_MCmn.csv')
-sdTabP = paste0(wd, 'output/figs/fig3_SAfits_20basins_MCsd.csv')
 hydroBASINpath = paste0(wd, 'input/basin_shapefiles/hydroBASINs/hybas_allMain.dbf')
 valPath = paste0(wd, 'input/validation/Database_S1_GRWL_validation_data.csv')
 
@@ -36,8 +34,7 @@ fP = list.files(outPath, 'csv', full.names=T)
 fN = list.files(outPath, 'csv')
 fN = sub('.csv', '', fN)
 hBASIN_code = sub("GRWL_", '', fN)
-ensembleTabPath = sub(outPath, paste0(tabDirPath, 'ensembleOuputTabs/'), fP)
-hTabPath = sub(outPath, paste0(tabDirPath, 'ensembleHistTabs/'), fP)
+ensembleTabPath = sub(outPath, paste0(tabDirPath, 'ensembleOutputTabs'), fP)
 
 # convert area units to reduce the size of numbers 
 # to prevent overflow on MLE statistical tests:
@@ -49,6 +46,8 @@ wMin = 90
 Amin = wMin*mL # minimum value to bin
 minNobs = 2.5e5  # minimum number of GRWL observations in a basin for analysis
 minElev = 0 # include rivers above this elevation (m)
+hMax = 10725 # maximum limit to Class A histogram graphs
+figBreaks = seq(Amin, hMax+int, int)*reducer
 
 # define minimum extrapolate bounds from Allen et al. Nature Communications
 # DOI: s41467-018-02991-w
@@ -57,33 +56,33 @@ fOaSD = 0.077*mL # sd width of 1st order streams
 fOaMeans = c(fOaMean-fOaSD, fOaMean, fOaMean+fOaSD)
 
 # number of Monte Carlo simulation ensemble runs to estimate error:
-nRun = 20
+nRun = 500
 
 # create table to store outputs of each Monte Carlo enseble run:
 ensembleTabNames = c("hBASIN_code", 
               "basinA_km2", 
               "nObs",
-              "nObsA",
+              "bClass",
               "nChan_mean",
               "Amax",
               "obSA_km2",
               "obSA_gt90m_km2", 
               # global
-              "gSA_km2",
-              "gSA_sd_km2",
-              "gSA_pcnt",
-              "gSA_sd_pcnt",
+              "gRSSA_km2",
+              "gMCRSSA_km2",
+              "gRSSA_pcnt",
+              "gMCRSSA_pcnt",
               "gXmin",
-              "gAlpha", 
-              "gAlpha_sd", 
+              "gMCalpha", 
+              "gMCfOw", 
               # basin
-              "pSA_km2",
-              "pSA_sd_km2",
-              "pSA_pcnt",
-              "pSA_sd_pcnt",
+              "pRSSA_km2",
+              "pMCRSSA_km2",
+              "pRSSA_pcnt",
+              "pMCRSSA_pcnt",
               "pXmin",
-              "pAlpha", 
-              "pAlpha_sd", 
+              "pMCalpha", 
+              "pMCfOw", 
               "pX2_stat",
               "pX2_p",
               "pKS_D",
@@ -97,10 +96,12 @@ mnTab = data.frame(array(NA, c(1, length(ensembleTabNames))))
 names(mnTab) = ensembleTabNames
 sdTab = mnTab
 
-# global MLE mean fit: 
+# Class A MLE mean fit: 
 gpFit = list(xm=Amin, 
              alpha=0.90345, # 20 basin with most obs, min elev = 0
              stdev=0.06285026) # 20 basins with most obs, min elev = 0
+
+
 
 # total surface area of Earth's non glaciated land surface:
 globalLandArea = 132773914
@@ -258,14 +259,14 @@ extrapSA_calculator = function(pFit, fOaMeans, Amin, Amax, sumA){
 }
 
 
-# combine uncertainty from MLE fit and extrapolation minimum
-# they are multiplied together so...
-mCarloUncertProp <- function(pFit, fOaMean, fOaSD, Amin, Amax, N, sumA){
+# include uncertainty of extrapolation minimum and, for Class B basins, 
+# uncertainty of Pareto fit to produce a Monte Carlo simulated RSSA estimate:
+RSSAextrapolater <- function(pFit, fOaMean, fOaSD, Amin, Amax, N, sumA){
   
   # calculate total surface area:
   a = pFit$alpha
   xm = fOaMean
-  x1 = fOaMean
+  x1 = fOaMean 
   x2 = Amin
   x3 = Amax
   
@@ -276,35 +277,40 @@ mCarloUncertProp <- function(pFit, fOaMean, fOaSD, Amin, Amax, N, sumA){
   # add observed to estimated area:
   meanSA = sumA*extrap2ObsRatio+sumA
   
-  # estimate uncertainty using Monte Carlo error propagation:
+  # If Class B basin, use uncertainty of Pareto fits of Class A
+  # basins to estimate RSSA using a Monte Carlo simulation. This isn't
+  # needed in Class A basins becaues the Pareto fit is fitted directly
+  # on the width data:
   if (is.na(pFit$stdev)){
     a = pFit$alpha
   }else{
     a = rnorm(N, pFit$alpha, pFit$stdev)
   }
   
+  # Estimate RSSA uncertainty associated with uncertain lower extrap. bound
+  # using a Monte Carlo simulation:
   xm = fOaMean
   x1 = rnorm(N, fOaMean, fOaSD)
   
-  # calc. area under curve with different 1st order stream widths:
   obsIntegral = -(a*x3*(xm/x3)^a)/(a-1) + (a*x2*(xm/x2)^a)/(a-1)
   extrapIntegral = -(a*x2*(xm/x2)^a)/(a-1) + (a*x1*(xm/x1)^a)/(a-1)
   extrap2ObsRatio = extrapIntegral/obsIntegral
   # add observed to estimated area:
-  simSA = sumA*extrap2ObsRatio+sumA
+  simSA = mean(sumA*extrap2ObsRatio+sumA)
   
   return(list(
-    meanSimSA =  meanSA*reducer*1e-6,
-    sdSimSA = sd(simSA, na.rm=T)*reducer*1e-6
+    meanRSSA =  meanSA*reducer*1e-6,
+    MCRSSA = mean(simSA, na.rm=T)*reducer*1e-6,
+    MCAlpha = a,
+    MCfOw = x1
   ))
-  
 }
 
 
 # plot histogram and fit for each basin (Fig 2b):
 histPlot = function(fOaMeans, Amax, pFit, gpFit, sumA, 
-                    breaks, h, Alen, int, pMcarlo, gpMcarlo, 
-                    obs_prcnt, pSA_prcnt, gpSA_prcnt, pGOF, m){
+                    figBreaks, h, Alen, int, pRSSAextrap, gpRSSAextrap, 
+                    obs_prcnt, pRSSA_prcnt, gpRSSA_prcnt, pGOF, m){
   
   # calculate total area of the bins: 
   pTotA = Alen*int
@@ -343,8 +349,8 @@ histPlot = function(fOaMeans, Amax, pFit, gpFit, sumA,
     axis(2, at=yAxis, labels=yAxis)
   }
   mtext(paste(title), line = -1, cex=0.75)
-  rect(breaks[-length(breaks)], 1, 
-       breaks[-1], h, 
+  rect(figBreaks[-length(figBreaks)], 1, 
+       figBreaks[-1], h, 
        border=NA, col="gray")
   
  
@@ -456,12 +462,12 @@ histPlot = function(fOaMeans, Amax, pFit, gpFit, sumA,
   # add pareto statistics:
   io=1;if (io==1){
   legend("topright", #c(paste0("global fit: \n",
-    #" SA: ", round(gpMcarlo$meanSimSA, 1), " +|- ", round(gpMcarlo$sdSimSA,1), " km2\n", 
-    #" %SA: ", round(gpSA_prcnt, 2), " +|- ", round(gpSA_sd_prct, 2),"%\n", 
+    #" SA: ", round(gpRSSAextrap$meanRSSA, 1), " +|- ", round(gpRSSAextrap$MCRSSA,1), " km2\n", 
+    #" %SA: ", round(gpRSSA_prcnt, 2), " +|- ", round(gpRSSA_MC_prct, 2),"%\n", 
     #" alpha: ", round(gpFit$alpha[2], 3), " +|- ", round(gpFit$stdev, 3), "\n"),
     paste0("basin fit: \n",
-    #" SA: ", round(pMcarlo$meanSimSA, 1), " +|- ", round(pMcarlo$sdSimSA,1), " km2\n", 
-    #" %SA: ", round(pSA_prcnt, 2), " +|- ", round(pSA_sd_prct, 2),"%\n",
+    #" SA: ", round(pRSSAextrap$meanRSSA, 1), " +|- ", round(pRSSAextrap$MCRSSA,1), " km2\n", 
+    #" %SA: ", round(pRSSA_prcnt, 2), " +|- ", round(pRSSA_MC_prct, 2),"%\n",
     " alpha: ", round(pFit$alpha[2], 3), " +|- ", round(pFit$stdev, 3), "\n",  
     " K-S D: ", round(pGOF$KS_D, 2), "    p: ", round(pGOF$KS_p, 3)),
     xjust=0, text.col=c(4,2), bty="n", cex=0.7)
@@ -476,27 +482,27 @@ tabRounder <- function(tab){
   tab$hBASIN_code = tab$hBASIN_code
   tab$basinA_km2 = tab$basinA_km2
   tab$nObs = tab$nObs
-  tab$nObsA = round(Alen)
+  tab$bClass = tab$bClass
   tab$nChan_mean = tab$nChan_mean
   tab$Amax = round(tab$Amax, 1)
   tab$obSA_km2 = round(tab$obSA_km2, 1)
   tab$obSA_gt90m_km2 = round(tab$obSA_gt90m_km2, 1)
-  # global fits:
-  tab$gSA_km2 = round(tab$gSA_km2, 1)
-  tab$gSA_sd_km2 = round(tab$gSA_sd_km2, 1)
-  tab$gSA_pcnt = round(tab$gSA_pcnt, 4)
-  tab$gSA_sd_pcnt = round(tab$gSA_sd_pcnt, 4)
+  # Class B RSSA:
+  tab$gRSSA_km2 = round(tab$gRSSA_km2, 1)
+  tab$gMCRSSA_km2 = round(tab$gMCRSSA_km2, 1)
+  tab$gRSSA_pcnt = round(tab$gRSSA_pcnt, 4)
+  tab$gMCRSSA_pcnt = round(tab$gMCRSSA_pcnt, 4)
   tab$gXmin = round(tab$gXmin, 1)
-  tab$gAlpha = round(tab$gAlpha, 3)
-  tab$gAlpha_sd = round(tab$gAlpha_sd, 3)
-  # basin fits:
-  tab$pSA_km2 = round(tab$pSA_km2, 1)
-  tab$pSA_sd_km2 = round(tab$pSA_sd_km2, 1)
-  tab$pSA_pcnt = round(tab$pSA_pcnt, 4)
-  tab$pSA_sd_pcnt = round(tab$pSA_sd_pcnt, 4)
+  tab$gMCalpha = round(tab$gMCalpha, 3)
+  tab$gMCfOw = round(tab$gMCfOw, 3)
+  # Class A RSSA:
+  tab$pRSSA_km2 = round(tab$pRSSA_km2, 1)
+  tab$pMCRSSA_km2 = round(tab$pMCRSSA_km2, 1)
+  tab$pRSSA_pcnt = round(tab$pRSSA_pcnt, 4)
+  tab$pMCRSSA_pcnt = round(tab$pMCRSSA_pcnt, 4)
   tab$pXmin = round(tab$pXmin, 2)
-  tab$pAlpha = round(tab$pAlpha, 3)
-  tab$pAlpha_sd = round(tab$pAlpha_sd, 3)
+  tab$pMCalpha = round(tab$pMCalpha, 3)
+  tab$pMCfOw = round(tab$pMCfOw, 3)
   tab$pX2_stat = round(tab$pX2_stat, 2)
   tab$pX2_p = round(tab$pX2_p, 3)
   tab$pKS_D = round(tab$pKS_D, 2)
@@ -508,14 +514,14 @@ tabRounder <- function(tab){
 ##############################################################################
 # RivWidth-based error estimate
 ##############################################################################
-
 # read in error spreadsheet
 valTab = read.csv(valPath, header=T, sep = '\t')
 keep = valTab$GAUGE_WIDTH_M >= 90
 mod = lm(valTab$GRWL_WIDTH_M[keep] ~ valTab$GAUGE_WIDTH_M[keep])
 #plot(valTab$GAUGE_WIDTH_M[keep], valTab$GRWL_WIDTH_M[keep])
-#abline(mod, col=2)
+#abline(0, 1, lty=2); abline(mod, col=2)
 dif = valTab$GRWL_WIDTH_M[keep] - valTab$GAUGE_WIDTH_M[keep]
+
 
 # fit distribution with MLE:
 nfit = fitdistr(dif, "normal")$estimate
@@ -536,7 +542,7 @@ fn = dn*length(dif)*hBin
 plot(dif); abline(h=0, col=2)
 # plot histograms of differences between GRWL and in situ
 # to show a roughly normal distribution:
-h = hist(dif, breaks=hSeq, 
+h = hist(dif, hSeq, 
      main = "Difference Histogram",
      xlab="GRWL Width - In Situ Width (m)")
 lines(lineSeq, fn, col=4)
@@ -548,29 +554,9 @@ print(paste0("GRWL error Monte Carlo  mean = ", round(nfit[1]),
 
 
 ##############################################################################
-# plot RSSA distributions in each hydroBASIN 
+# Calculate RSSA in Class A hydroBASINs
 ##############################################################################
-
-# if list file does not exist, create a list N GRWL obs. in each hBasin: 
-if (!file.exists(nGRWLperBasinOutPath)){
-  nGRWLperBasListGenerator(fP, tabDirPath, nGRWLperBasinOutPath)
-}
-# read in sorted table of N GRWL obs in each hBasin: 
-nGRWLperBasTab = read.csv(nGRWLperBasinOutPath, header=T)
-
-# read in hBASIN shapefile dbf:
-hBASIN = foreign::read.dbf(sub('hybas_allMain', 'hybas_allMainCopy', hydroBASINpath))
-
-
-# Class A basins:
-
-# Class A basins contain >250,000 river measurements:
-classA_fP = as.character(nGRWLperBasTab$fP[nGRWLperBasTab$nGRWLperBas>250000])
-classA_fN = nGRWLperBasTab$fN[nGRWLperBasTab$nGRWLperBas>250000]
-nClassA = length(classA_fP)
-print(paste("Class A Basins:", paste(classA_fN, collapse=" ")))
-
-# in calss A basins, We use a Monte Carlo simulation to characterize 
+# In Class A basins, We use a Monte Carlo simulation to characterize 
 # RSSA error due to the uncertainty of GRWL measurements. For each ensemble 
 # run, we fit a Pareto distribution of RSSA measurements using maximum
 # likelihood estimation (MLE). To fit the distribution, we set the 
@@ -581,6 +567,38 @@ print(paste("Class A Basins:", paste(classA_fN, collapse=" ")))
 # resolution Landsat imagery (36.21 m). 
 # Quantify the distribution of these statistical fits
 
+# read in hBASIN shapefile dbf:
+hBASIN = foreign::read.dbf(sub('hybas_allMain', 'hybas_allMainCopy', hydroBASINpath))
+
+# if list file does not exist, create a list N GRWL obs. in each hBasin: 
+if (!file.exists(nGRWLperBasinOutPath)){
+  nGRWLperBasListGenerator(fP, tabDirPath, nGRWLperBasinOutPath)
+}
+# read in sorted table of N GRWL obs in each hBasin: 
+nGRWLperBasTab = read.csv(nGRWLperBasinOutPath, header=T)
+nGRWLperBasTab$fP = paste0(wd, "output/GRWL/GRWL_by_hydroBASIN/", nGRWLperBasTab$fN, ".csv")
+
+
+# Class A basins contain >250,000 river measurements:
+bClass = "1"
+classA_fP = as.character(nGRWLperBasTab$fP[nGRWLperBasTab$nGRWLperBas>250000])
+classA_fN = nGRWLperBasTab$fN[nGRWLperBasTab$nGRWLperBas>250000]
+mnTabP = paste0(wd, 'output/figs/figS6_SAfits_classA_MCmn.csv')
+sdTabP = paste0(wd, 'output/figs/figS6_SAfits_classA_MCsd.csv')
+hTabPath = sub(outPath, paste0(tabDirPath, 'ensembleHistTabs/'), classA_fP)
+ensembleTabPath = sub(outPath, paste0(tabDirPath, 'ensembleOutputTabs/'), classA_fP)
+
+# for (i in 1:nClassA){
+#   print(i)
+#   print(file.exists(ensembleTabPath[i]))
+# }
+
+nClassA = length(classA_fP)
+print(paste("Class A Basins:", paste(classA_fN, collapse=" ")))
+
+# get basin area in km2:
+basinArea = hBASIN$area_km2[match(classA_fN, hBASIN$MAIN_BAS)] #132773914
+
 # get start time:
 old <- Sys.time() 
 
@@ -589,48 +607,50 @@ pdf(pdfOut, width=15, height=9)
 par(mfrow=c(4,5))
 par(oma=c(3,3,0,0), mar=c(0,0,0,0))
 
-
+# calculate RSSA in the basin:
 m = 1
-for (i in 1:nClassA){ 
-  
-  # read in and filter GRWL data: ####
-  csv_raw = read.csv(classA_fP[i], header=T)
-  
-  # remove data with widths<100m, elev<1m, lakes, canals:
-  keep = csv_raw$width_m>wMin & 
-    csv_raw$elev_m>minElev & 
-    csv_raw$lakeFlag!=1 & 
-    csv_raw$lakeFlag!=3 
-  
-  N = length(which(keep))
+for (i in 11:nClassA){
   
   print(paste('i =',i, ' of ', nClassA,', fN = ', classA_fN[i]))
   
-  # calculate the average number of channels: 
-  nChan = mean(csv_raw$nchannels[keep])
-  # calculate distance between each adjacent GRWL centerline cell:
-  d = distCalc(csv_raw[keep,])
+  # read in GRWL data by basin:
+  csv_raw = read.csv(classA_fP[i], header=T)
+  N_raw = nrow(csv_raw)
   
+  # get basin area in km2:
+  basinArea = hBASIN$area_km2[hBASIN$MAIN_BAS == classA_fN[i]] #132773914
   
   # Monte Carlo error propogation: ####
   for (j in 1:nRun){
     
     print(paste("Run:", j))
-    # reset csv to original table:
-    csv = csv_raw[keep, ]
     
-    # generate monte carlo simulation pertubations:
-    w_perturb = rnorm(N, nfit[1], nfit[2])
+    # reset GRWL table to original:
+    csv = csv_raw
     
-    # calc width, distance, river area, sum river area, maximum area value: 
-    w_raw = csv$width_m + w_perturb
-    w = w_raw/reducer
+    # generate monte carlo simulation width pertubations:
+    w_perturb = rnorm(N_raw, nfit[1], nfit[2])
+    csv$width_m = csv$width_m + w_perturb
+    
+    # remove data with widths<90m, elev<0m, lakes, canals:
+    keep = csv$width_m>wMin & 
+      csv$elev_m>minElev & 
+      csv$lakeFlag!=1 & 
+      csv$lakeFlag!=3 
+    csv = csv[keep,]
+    N = nrow(csv)
+    
+    # calc river distance, width, surface area, sum river area, max discrete area value: 
+    # calculate distance between each adjacent GRWL centerline cell:
+    d = distCalc(csv)
+    w = csv$width_m/reducer
     A_raw = w*d
     A = A_raw[A_raw>Amin]
     sumA = sum(A)
     Amax = max(A)
     Alen = length(A)
-    
+    # calculate the average number of channels: 
+    nChan = mean(csv$nchannels)
 
     
     # MLE fit: ####
@@ -640,70 +660,67 @@ for (i in 1:nClassA){
     pFit = pareto.mle(x=A, std=F) 
   
     # calculate GOF statistics with X2 and KS test:
-    breaks = seq(Amin, Amax+int, int)
-    h = hist(A, breaks, plot=F)
+    h = hist(A[A<max(figBreaks/reducer)], figBreaks/reducer, plot=F)
     jA = jitter(A) # to prevent ties in the following GOF tests
     pGOF = suppressWarnings(GOF(pFit, h, jA))
   
+    
     # add histogram information to table to be in plot:
     if (j == 1){
-      hTab = as.data.frame(array(NA, c(nRun, length(h$mids))))
+      hTab = as.data.frame(array(0, c(nRun, length(figBreaks))))
+      names(hTab) = round(figBreaks)
     }
-    hCounts = c(h$counts, rep(0, 100))
-    hTab[j,] = hCounts[1:ncol(hTab)]
+    hTab[j,1:length(h$counts)] = h$counts
     
     
-    # RSSA estimate with added uncertainty: ####
+    # RSSA estimate with uncertainty: ####
     
-    # calculate total surface area of rivers and streams by extending the
-    # RSSA abundance to smaller rivers, and calculate confidence intervals
+    # calculate total surface area of rivers and streams by extending 
+    # RSSA abundance to smaller rivers, and calc confidence intervals
     # using a Monte Carlo simulation:
-    pMcarlo = mCarloUncertProp(pFit, fOaMean, fOaSD, Amin, Amax, N=1, sumA)
+    pRSSAextrap = RSSAextrapolater(pFit, fOaMean, fOaSD, Amin, Amax, N=1, sumA)
     # global 
-    gpMcarlo = mCarloUncertProp(gpFit, fOaMean, fOaSD, Amin, Amax, N=1, sumA)
+    gpRSSAextrap = RSSAextrapolater(gpFit, fOaMean, fOaSD, Amin, Amax, N=1, sumA)
     
     # calculate the % of land surface occupied by rivers and streams: 
-    basinArea = hBASIN$area_km2[hBASIN$MAIN_BAS == fN[i]] #132773914
-    obs_prcnt = 100*sumA*reducer*1e-6/basinArea
-    pSA_prcnt = 100*pMcarlo$meanSimSA/basinArea
-    pSA_sd_prct = 100*pMcarlo$sdSimSA/basinArea
-    gpSA_prcnt = 100*gpMcarlo$meanSimSA/basinArea
-    gpSA_sd_prct = 100*gpMcarlo$sdSimSA/basinArea
+    obs_prcnt = 100*sumA*reducer*1e-6/basinArea[i]
+    pRSSA_prcnt = 100*pRSSAextrap$meanRSSA/basinArea[i]
+    pRSSA_MC_prct = 100*pRSSAextrap$MCRSSA/basinArea[i]
+    gpRSSA_prcnt = 100*gpRSSAextrap$meanRSSA/basinArea[i]
+    gpRSSA_MC_prct = 100*gpRSSAextrap$MCRSSA/basinArea[i]
     
     # fill in table with outputs of ensemble run: ####
     ensembleTab[j,] =
       as.vector(c(
-                fN[i], 
-                basinArea,
-                length(which(keep)), 
-                Alen,
-                nChan,
-                Amax,
-                sum(reducer*mL*1e-6*
-                      csv$width_m[csv$lakeFlag!=1 & csv$lakeFlag!=3]), 
-                sumA*reducer*1e-6,
-                # global fits:
-                gpMcarlo$meanSimSA, 
-                gpMcarlo$sdSimSA, 
-                gpSA_prcnt, 
-                gpSA_sd_prct, 
-                gpFit$xm*reducer, 
-                gpFit$alpha,
-                gpFit$stdev,
-                # basin fits:
-                pMcarlo$meanSimSA, 
-                pMcarlo$sdSimSA, 
-                pSA_prcnt, 
-                pSA_sd_prct, 
-                pFit$xm*reducer, 
-                pFit$alpha,
-                pFit$stdev,
-                pGOF$X2, 
-                pGOF$X2_p, 
-                pGOF$KS_D, 
-                pGOF$KS_p
-                ))
-    
+        fN[i], 
+        basinArea[i],
+        length(which(keep)), 
+        bClass,
+        nChan,
+        Amax,
+        sum(reducer*mL*1e-6*csv$width_m[csv$lakeFlag!=1 & csv$lakeFlag!=3]), 
+        sumA*reducer*1e-6,
+        # Class B basins:
+        gpRSSAextrap$meanRSSA, 
+        gpRSSAextrap$MCRSSA, 
+        gpRSSA_prcnt, 
+        gpRSSA_MC_prct, 
+        gpFit$xm*reducer, 
+        gpRSSAextrap$MCAlpha,
+        gpRSSAextrap$MCfOw,
+        # Class A basins:
+        pRSSAextrap$meanRSSA, 
+        pRSSAextrap$MCRSSA, 
+        pRSSA_prcnt, 
+        pRSSA_MC_prct, 
+        pFit$xm*reducer, 
+        pRSSAextrap$MCAlpha,
+        pRSSAextrap$MCfOw,
+        pGOF$X2, 
+        pGOF$X2_p, 
+        pGOF$KS_D, 
+        pGOF$KS_p
+      ))
   
   } # end Monte Carlo simulation
   
@@ -712,6 +729,15 @@ for (i in 1:nClassA){
   # write out ensemble output table:
   write.csv(ensembleTab, ensembleTabPath[i], row.names=F)
   
+  hist(as.numeric(ensembleTab$pMCRSSA_km2))
+  abline(v=ensembleTab$pRSSA_km2)
+  
+  # Sensitivity scatter for first order width threshold:
+  #plot(ensembleTab$pMCfOw, ensembleTab$pMCRSSA_km2)
+  # Sensitivity scatter for pareto alpha (slope param):
+  #plot(ensembleTab$pMCalpha, ensembleTab$pMCRSSA_km2)
+  # Sensitivity scatter for observed river surface area:
+  #plot(ensembleTab$obSA_gt90m_km2, ensembleTab$pMCRSSA_km2)
   
   # take column means and add them to the mnTab output table:
   mat = matrix(as.numeric(unlist(ensembleTab)), nrow=nRun)
@@ -719,43 +745,32 @@ for (i in 1:nClassA){
   sdTab[m, ] = apply(mat, 2, sd)
   
   # Plot histogram and Pareto fits (Fig. 2b):
-  histPlot(fOaMeans, 
-           mnTab$Amax[m], 
-           pFit=list(xm=mnTab$pXmin[m]/reducer, 
-                     alpha=mnTab$pAlpha[m],
-                     stdev=sdTab$pAlpha[m]),
-           gpFit, 
-           mnTab$obSA_gt90m_km2[m]*reducer^2, #sdTab$obSA_gt90m_km2[m] 
-           breaks, 
-           round(as.vector(colMeans(hTab, na.rm=T))),
-           mnTab$nObsA[m], #sdTab$nObsA[m]
-           int, 
-           pMcarlo = list(meanSimSA=mnTab$pSA_km2[m],
-                          sdSimSA=sdTab$pSA_km2[m]),
-           gpMcarlo, 
-           100*mnTab$obSA_gt90m_km2[m]/basinArea, # 100*sdTab$obSA_gt90m_km2[m]/basinArea  
-           mnTab$pSA_pcnt[m], #sdTab$pSA_pcn[m]t
-           mnTab$gSA_pcnt[m], #sdTab$gSA_pcnt[m], 
-           pGOF = list(X2=mnTab$pX2_stat[m], 
-                       X2_p=mnTab$pX2_p[m], 
-                       KS_D=mnTab$pKS_D[m], 
-                       KS_p=mnTab$pKS_p[m]), 
-           # sdTab$pX2_stat[m], sdTab$pX2_p[m], sdTab$pKS_D[m], sdTab$pKS_p[m], 
-           m)
-  
+  # histPlot(fOaMeans, 
+  #          mnTab$Amax[m], 
+  #          pFit=list(xm=mnTab$pXmin[m]/reducer, 
+  #                    alpha=mnTab$pMCalpha[m],
+  #                    stdev=sdTab$pMCalpha[m]),
+  #          gpFit, 
+  #          mnTab$obSA_gt90m_km2[m]*reducer^2, #sdTab$obSA_gt90m_km2[m] 
+  #          figBreaks, 
+  #          round(as.vector(colMeans(hTab, na.rm=T))),
+  #          mnTab$nObsA[m], #sdTab$nObsA[m]
+  #          int, 
+  #          pRSSAextrap = list(meanRSSA=mnTab$pRSSA_km2[m],
+  #                         MCRSSA=sdTab$pRSSA_km2[m]),
+  #          gpRSSAextrap, 
+  #          100*mnTab$obSA_gt90m_km2[m]/basinArea, # 100*sdTab$obSA_gt90m_km2[m]/basinArea  
+  #          mnTab$pRSSA_pcnt[m], #sdTab$pSA_pcn[m]t
+  #          mnTab$gRSSA_pcnt[m], #sdTab$gRSSA_pcnt[m], 
+  #          pGOF = list(X2=mnTab$pX2_stat[m], 
+  #                      X2_p=mnTab$pX2_p[m], 
+  #                      KS_D=mnTab$pKS_D[m], 
+  #                      KS_p=mnTab$pKS_p[m]), 
+  #          # sdTab$pX2_stat[m], sdTab$pX2_p[m], sdTab$pKS_D[m], sdTab$pKS_p[m], 
+  #          m)
   m = m + 1
 }
 
-# round columns of mnTab:
-mnTab = tabRounder(mnTab)
-sdTab = tabRounder(sdTab)
-
-# write out mean and stdev output tables:
-#write.csv(mnTab, mnTabP, row.names=F)
-#write.csv(sdTab, sdTabP, row.names=F)
-
-#mnTab = read.csv(mnTabP, header=T)
-#sdTab = read.csv(sdTabP, header=T)
 
 dev.off()
 cmd = paste('open', pdfOut)
@@ -764,200 +779,139 @@ system(cmd)
 new = Sys.time() - old
 print(new) 
 
+
+
+# round columns and write out mean and stdev output tables: 
+mnTabRound = tabRounder(mnTab)
+sdTabRound = tabRounder(sdTab)
+write.csv(mnTabRound, mnTabP, row.names=F)
+write.csv(sdTabRound, sdTabP, row.names=F)
+
+
 # add up the total observed & extrapolated river surface area in Class A basins:
 classA_obs_gt90m = sum(mnTab$obSA_gt90m_km2)
 classA_obs = sum(mnTab$obSA_km2)
-classA_RSSA = sum(mnTab$pSA_km2)
+classA_RSSA = sum(mnTab$pRSSA_km2)
 classA_BasinA = sum(mnTab$basinA_km2)
-print(paste("Class A basins observed %RSSA > 90m:", round(100*classA_obs_gt90m/classA_BasinA,2), "%"))
-print(paste("Class A basins observed %RSSA:", round(100*classA_obs/classA_BasinA,2), "%"))
+print(paste("Class A basins observed %RSSA widths >90m:", round(100*classA_obs_gt90m/classA_BasinA,2), "%"))
+print(paste("Class A basins observed %RSSA all widths:", round(100*classA_obs/classA_BasinA,2), "%"))
 print(paste("Class A basins extrapolated %RSSA:", round(100*classA_RSSA/classA_BasinA,2), "%"))
 
 # add uncertainty:
-totKm2 = c(
-  sum(as.numeric(mnTab$pSA_km2))-sum(as.numeric(sdTab$pSA_km2)),
-  sum(as.numeric(mnTab$pSA_km2)),
-  sum(as.numeric(mnTab$pSA_km2))+sum(as.numeric(sdTab$pSA_km2)))
+RSSA_km2 = round(c(sum(as.numeric(mnTab$pRSSA_km2)), 
+                   + sum(as.numeric(sdTab$pRSSA_km2)), 
+                   sum(as.numeric(sdTab$pRSSA_km2))))
+  
+  
+print("extrapolated Class A RSSA:")
+print(RSSA_km2)
+print(100*RSSA_km2/sum(mnTab$basinA_km2))
 
-print("extrapolated RSSA:")
-print(totKm2)
-print(100*totKm2/globalLandArea)
-
-
-
-# plot Fig. S6: Pareto fits in each Class A basin
-
+##############################################################################
+# Plot Fig. S6: Pareto fits in each Class A basin
+##############################################################################
 
 # set up output pdf:
-pdf(pdfOut, width=15, height=9)
+pdfOut = paste0(wd, 'output/figs/figS6_ClassA.pdf')
+pdf(pdfOut, width=7, height=4.5)
 par(mfrow=c(4,5))
-par(oma=c(3,3,0,0), mar=c(0,0,0,0))
+par(oma=c(3,3.5,0,0.5), mar=c(0,0,0,0))
+#PlotOrder = c(5, )
 
-histPlot = function(fOaMeans, Amax, pFit, gpFit, sumA, 
-                    breaks, h, Alen, int, pMcarlo, gpMcarlo, 
-                    obs_prcnt, pSA_prcnt, gpSA_prcnt, pGOF, m){
+xlim = range(figBreaks)
+ylim = c(1, 3e6)
+
+hTabPath = sub(outPath, paste0(tabDirPath, 'ensembleHistTabs/'), classA_fP)
+ensembleTabPath = sub(outPath, paste0(tabDirPath, 'ensembleOutputTabs/'), classA_fP)
+
+mnTab = read.csv(mnTabP, header=T)
+sdTab = read.csv(sdTabP, header=T)
+
+# for each class A basin, plot RSSA histogram:
+for (i in 1:nClassA){
+  # read in table containing stastistical results of each Monte Carlo simulation
+  # run and take mean and stdev of ensembles:
+  ensembleTab = read.csv(ensembleTabPath[i], header=T)
+  mnTab = as.data.frame(t(colMeans(ensembleTab, na.rm=T)))
+  sdTab = as.data.frame(t(apply(ensembleTab, 2, sd)))
   
-  # calculate total area of the bins: 
-  pTotA = Alen*int
+  # read in binned histogram data and take mean and stdev of ensembles:
+  dTab = read.csv(hTabPath[i], header=T)
+  dMn = round(colMeans(dTab))
+  dSD = round(apply(dTab, 2, sd))
   
-  # get pFit formated for the plotter (script could be improved):
-  if (is.na(pFit$stdev)){ pFit$stdev = 0 }
-  pFit$alpha = c(pFit$alpha-pFit$stdev, pFit$alpha, pFit$alpha+pFit$stdev)
+  # get histogram breaks:
+  # FIXME: rerun MC and remove reducer below:
+  #breaks = as.numeric(sub("X", "", names(dTab)))
+  breaks=figBreaks
+  xlim = range(breaks)
+  lB = c(breaks[-length(breaks)])
+  rB = breaks[-1]
+  mid = colMeans(rbind(lB, rB))
   
-  if (is.na(gpFit$stdev)){ gpFit$stdev = 0 }
-  gpFit$alpha = c(gpFit$alpha-gpFit$stdev, gpFit$alpha, gpFit$alpha+gpFit$stdev)  
-  
-  # skip the first plot
-  #if (m == 1){plot.new()}
-  
-  # plot empirical frequency histogram:
-  xlim = c(Amin, 10725)
-  ylim = c(1, 2e6)
-  
-  title = paste0('Basin #: ',fN[i])
+  # plot RSSA histogram:
+  # # quartile histogram:
+  # plotLimInd = which(breaks<=xlim[2])
+  # quarts = apply(dTab, 2, quantile, probs=c(0.25, 0.5, 0.75))[,plotLimInd[-length(breaks)]]
   plot(NA, 
        xlim=xlim, 
        ylim=ylim,
        xlab=paste("Area (m2)"), 
        ylab="N measurements",
-       #main=title,
+       bty='n',
        type='n', 
        log='xy',
        xaxt='n',
-       yaxt='n')
-  if(m %in% c(16:20)){
-    xAxis = axis(1, labels=F)
-    axis(1, at=xAxis, labels=xAxis*reducer)
+       yaxt='n',
+       las=T)
+  box(lwd=0.5) 
+  if(i %in% c(16:20)){
+    xAxis = c(1e4, 1e5, 1e6)
+    axis(1, at=xAxis, labels=formatC(xAxis, digits=0, format="e"), lwd=0.5)
   }
-  if(m %in% c(1,6,11,16)){
-    yAxis = axis(2, labels=F)
-    axis(2, at=yAxis, labels=yAxis)
+  if(i %in% c(1,6,11,16)){
+    yAxis = c(1e0, 1e2, 1e4, 1e6)
+    axis(2, at=yAxis, labels=formatC(yAxis, digits=0, format="e"), las=1, lwd=0.5)
   }
-  mtext(paste(title), line = -1, cex=0.75)
-  rect(breaks[-length(breaks)], 1, 
-       breaks[-1], h, 
-       border=NA, col="gray")
+  zC = dMn>0
+  polygon(x=rbind(lB[zC], rB[zC], rB[zC], lB[zC], NA),
+          y=rbind(dMn[zC], dMn[zC], 
+                  ylim[1], ylim[1], NA),
+          bty="n", lwd=0.7, border=NA, col=rgb(0.7, 0.7, 0.7, 1))
   
+  # add 1st and 3rd quartile uncertainty bars:
+  # zC = quarts[1,]>0 & quarts[2,]>0 & quarts[3,]>0
+  # arrows(mid[zC], quarts[1,zC], mid[zC], quarts[3,zC],
+  #        code=3, length=0.018, angle=90, lwd=0.5)
   
-  
-  # basin-fit pareto curve:
-  io=0; if(io==1){
-    # 1st order width uncertainty:
-    x1 = fOaMeans[1]
-    x2 = fOaMeans[3]
-    y1 = dpareto(fOaMeans[1], pFit[[1]], pFit[[2]][2])*pTotA
-    y2 = dpareto(fOaMeans[3], pFit[[1]], pFit[[2]][2])*pTotA
-    polygon(x = c(x1, x1, x2, x2),
-            y = c(1, y1, y2, 1),
-            col=rgb(1,0,0,0.2), border=NA)
-    
-    # Pareto MLE fit uncertainty: 
-    y1 = dpareto(fOaMeans[2], pFit[[1]], pFit[[2]][1])*pTotA
-    y2 = dpareto(Amax, pFit[[1]], pFit[[2]][1])*pTotA
-    y3 = dpareto(Amax, pFit[[1]], pFit[[2]][3])*pTotA
-    y4 = dpareto(fOaMeans[2], pFit[[1]], pFit[[2]][3])*pTotA
-    polygon(x = c(fOaMeans[2], Amax, Amax, fOaMeans[2]),
-            y = c(y1, y2, y3, y4),
-            col=rgb(1,0,0,0.2), border=NA)
-    
-    # estimated area polygon:
-    y1 = dpareto(fOaMeans[2], pFit[[1]], pFit[[2]][2])*pTotA
-    y2 = dpareto(Amin, pFit[[1]], pFit[[2]][2])*pTotA
-    polygon(x = c(fOaMeans[2], Amin, Amin, fOaMeans[2]),
-            y = c(y1, y2, 1, 1),
-            col=rgb(1,0.2,0,0.1), border=NA)
-  }
+  # add standard deviation (1-alpha) bar to each bin:
+  lD = dMn - dSD
+  uD = dMn + dSD
+  zC = dMn>0 & lD>0 & uD>0
+  segments(x0=mid[zC], x1=mid[zC], y0=lD[zC], y1=uD[zC], col=1, lwd=0.7)
+
   # Pareto fit over observed data:
-  y1 = dpareto(Amin, pFit[[1]], pFit[[2]][2])*pTotA
-  y2 = dpareto(Amax, pFit[[1]], pFit[[2]][2])*pTotA
-  segments(Amin, y1, Amax, y2, col=4, lwd=1.2)
+  # FIX ME:# FIX ME:# FIX ME:# FIX ME:# FIX ME:# FIX ME:
+  # # FIX ME: rerun MC ensemble then remove reducer multiplier below:
+  y1 = dpareto(mnTab$pXmin, mnTab$pXmin, mnTab$pMCalpha)*mnTab$nObs*int*reducer
+  y2 = dpareto(mnTab$Amax*reducer, mnTab$pXmin, mnTab$pMCalpha)*mnTab$nObs*int*reducer
+  segments(mnTab$pXmin, y1, mnTab$Amax*reducer, y2, col=4, lwd=1.8)
   
-  io=0;if (io==1){
-    # extrapolated Pareto fit:
-    y1 = dpareto(fOaMeans[2], pFit[[1]], pFit[[2]][2])*pTotA
-    y2 = dpareto(Amin, pFit[[1]], pFit[[2]][2])*pTotA
-    segments(fOaMean, y1, Amin, y2, col=2, lwd=1.2, lty=2)
-    
-    # first order uncertainty bars:
-    y1 = dpareto(fOaMeans[2], pFit[[1]], pFit[[2]][2])*pTotA
-    y2 = dpareto(fOaMeans[3], pFit[[1]], pFit[[2]][2])*pTotA
-    arrows(fOaMeans[2], y1, fOaMeans[3], y2, 0.05, 90, col=2, lwd=1.2)
-    y1 = dpareto(fOaMeans[2], pFit[[1]], pFit[[2]][2])*pTotA
-    y2 = dpareto(fOaMeans[1], pFit[[1]], pFit[[2]][2])*pTotA
-    arrows(fOaMeans[2], y1, fOaMeans[1], y2, 0.05, 90, col=2, lwd=1.2)
-    
-    y2 = dpareto(fOaMeans[2], pFit[[1]], pFit[[2]][1])*pTotA
-    arrows(fOaMeans[2], 1, fOaMeans[1], 1, 0.05, 90, col=2, lwd=1.2)
-    y2 = dpareto(fOaMeans[2], pFit[[1]], pFit[[2]][3])*pTotA
-    arrows(fOaMeans[2], 1, fOaMeans[3], 1, 0.05, 90, col=2, lwd=1.2)
-    
-    
-    # global-fit pareto curve:
-    
-    # 1st order width uncertainty:
-    x1 = fOaMeans[1]
-    x2 = fOaMeans[3]
-    y1 = dpareto(fOaMeans[1], gpFit[[1]], gpFit[[2]][2])*pTotA
-    y2 = dpareto(fOaMeans[3], gpFit[[1]], gpFit[[2]][2])*pTotA
-    polygon(x = c(x1, x1, x2, x2),
-            y = c(1, y1, y2, 1),
-            col=rgb(0,0,1,0.2), border=NA)
-    
-    # Pareto MLE fit uncertainty: 
-    y1 = dpareto(fOaMeans[2], gpFit[[1]], gpFit[[2]][1])*pTotA
-    y2 = dpareto(Amax, gpFit[[1]], gpFit[[2]][1])*pTotA
-    y3 = dpareto(Amax, gpFit[[1]], gpFit[[2]][3])*pTotA
-    y4 = dpareto(fOaMeans[2], gpFit[[1]], gpFit[[2]][3])*pTotA
-    polygon(x = c(fOaMeans[2], Amax, Amax, fOaMeans[2]),
-            y = c(y1, y2, y3, y4),
-            col=rgb(0,0,1,0.2), border=NA)
-    
-    # estimated area polygon:
-    y1 = dpareto(fOaMeans[2], gpFit[[1]], gpFit[[2]][2])*pTotA
-    y2 = dpareto(Amin, gpFit[[1]], gpFit[[2]][2])*pTotA
-    polygon(x = c(fOaMeans[2], Amin, Amin, fOaMeans[2]),
-            y = c(y1, y2, 1, 1),
-            col=rgb(0,0.2,1,0.1), border=NA)
-    
-    # Pareto fit over observed data:
-    y1 = dpareto(Amin, gpFit[[1]], gpFit[[2]][2])*pTotA
-    y2 = dpareto(Amax, gpFit[[1]], gpFit[[2]][2])*pTotA
-    segments(Amin, y1, Amax, y2, col=4, lwd=1.2)
-    
-    # extrapolated Pareto fit:
-    y1 = dpareto(fOaMeans[2], gpFit[[1]], gpFit[[2]][2])*pTotA
-    y2 = dpareto(Amin, gpFit[[1]], gpFit[[2]][2])*pTotA
-    segments(fOaMean, y1, Amin, y2, col=4, lwd=1.2, lty=2)
-    
-    # first order uncertainty bars:
-    y1 = dpareto(fOaMeans[2], gpFit[[1]], gpFit[[2]][2])*pTotA
-    y2 = dpareto(fOaMeans[3], gpFit[[1]], gpFit[[2]][2])*pTotA
-    arrows(fOaMeans[2], y1, fOaMeans[3], y2, 0.05, 90, col=4, lwd=1.2)
-    y1 = dpareto(fOaMeans[2], gpFit[[1]], gpFit[[2]][2])*pTotA
-    y2 = dpareto(fOaMeans[1], gpFit[[1]], gpFit[[2]][2])*pTotA
-    arrows(fOaMeans[2], y1, fOaMeans[1], y2, 0.05, 90, col=4, lwd=1.2)
-    
-    y2 = dpareto(fOaMeans[2], gpFit[[1]], gpFit[[2]][1])*pTotA
-    arrows(fOaMeans[2], 1, fOaMeans[1], 1, 0.05, 90, col=4, lwd=1.2)
-    y2 = dpareto(fOaMeans[2], gpFit[[1]], gpFit[[2]][3])*pTotA
-    arrows(fOaMeans[2], 1, fOaMeans[3], 1, 0.05, 90, col=4, lwd=1.2)
-  }
-  
-  
-  # add pareto statistics:
-  io=1;if (io==1){
-    legend("topright", #c(paste0("global fit: \n",
-           #" SA: ", round(gpMcarlo$meanSimSA, 1), " +|- ", round(gpMcarlo$sdSimSA,1), " km2\n", 
-           #" %SA: ", round(gpSA_prcnt, 2), " +|- ", round(gpSA_sd_prct, 2),"%\n", 
-           #" alpha: ", round(gpFit$alpha[2], 3), " +|- ", round(gpFit$stdev, 3), "\n"),
-           paste0("basin fit: \n",
-                  #" SA: ", round(pMcarlo$meanSimSA, 1), " +|- ", round(pMcarlo$sdSimSA,1), " km2\n", 
-                  #" %SA: ", round(pSA_prcnt, 2), " +|- ", round(pSA_sd_prct, 2),"%\n",
-                  " alpha: ", round(pFit$alpha[2], 3), " +|- ", round(pFit$stdev, 3), "\n",  
-                  " K-S D: ", round(pGOF$KS_D, 2), "    p: ", round(pGOF$KS_p, 3)),
-           xjust=0, text.col=c(4,2), bty="n", cex=0.7)
-  }
-  
+  # # add alpha uncertainty bars (too small to be seen):
+  # y1a = dpareto(mnTab$pXmin, mnTab$pXmin, mnTab$pMCalpha+sdTab$pMCalpha)*mnTab$nObsA*int
+  # y1b = dpareto(mnTab$pXmin, mnTab$pXmin, mnTab$pMCalpha-sdTab$pMCalpha)*mnTab$nObsA*int
+  # y2a = dpareto(mnTab$Amax, mnTab$pXmin, mnTab$pMCalpha+sdTab$pMCalpha)*mnTab$nObsA*int
+  # y2b = dpareto(mnTab$Amax, mnTab$pXmin, mnTab$pMCalpha-sdTab$pMCalpha)*mnTab$nObsA*int
+  # 
+  # polygon(x = c(mnTab$pXmin, mnTab$pXmin, mnTab$Amax, mnTab$Amax),
+  #         y = c(y1a, y1b, y2b, y2a),
+  #         col=rgb(1,0,0,01), border=NA)
+
+  # add lagend:
+  legend("topright",
+         c(paste0(substr(paste0("0", i), nchar(i), nchar(i)+1), ': ', fN[i]),
+           paste0("a = ", round(mnTab$pMCalpha, 2), "±", formatC(round(sdTab$pMCalpha,4), format="g"))),
+         xjust=0, text.col=c(1,4), bty="n", cex=1)
 }
 
 dev.off()
@@ -965,12 +919,405 @@ cmd = paste('open', pdfOut)
 system(cmd)
 
 
-## elev>5, alphaN=37; minN=5000 --> 600095, -464410, +856176
-## elev>1, alphaN=38; minN=100,000 --> 356679.6, -465322, +678286.9
+
+##############################################################################
+# Calculate RSSA in Class B hydroBASINs
+##############################################################################
+# In Class B basins, Class B basins contain an intermediate amount of GRWL 
+# data, specifically between 10,000 and 250,000 river measurements. The same 
+# approach applied in Class A basins is also applied in Class B basins, except 
+# that rather than fitting the Pareto shape parameter to each individual basin, 
+# we use the mean and standard deviation of the Pareto shape parameter that was 
+# fit in Class A basins (fig. S6). In these basins, we calculate 
+# the combined uncertainty of the Pareto fit and the extrapolation minimum by 
+# Monte-Carlo uncertainty propagation on the RSSA definite integral (Nruns=500)
+# Quantify the distribution of these statistical fits
+
+# read in hBASIN shapefile dbf:
+hBASIN = foreign::read.dbf(sub('hybas_allMain', 'hybas_allMainCopy', hydroBASINpath))
+
+# if list file does not exist, create a list N GRWL obs. in each hBasin: 
+if (!file.exists(nGRWLperBasinOutPath)){
+  nGRWLperBasListGenerator(fP, tabDirPath, nGRWLperBasinOutPath)
+}
+# read in sorted table of N GRWL obs in each hBasin: 
+nGRWLperBasTab = read.csv(nGRWLperBasinOutPath, header=T)
+nGRWLperBasTab$fP = paste0(wd, "output/GRWL/GRWL_by_hydroBASIN/", nGRWLperBasTab$fN, ".csv")
+
+
+# Class B basins contain between 10k and 250k river measurements:
+bClass = "2"
+classBboo = nGRWLperBasTab$nGRWLperBas>10000 & nGRWLperBasTab$nGRWLperBas<=250000
+classB_fP = as.character(nGRWLperBasTab$fP[classBboo])
+classB_fN = nGRWLperBasTab$fN[classBboo]
+mnTabP = paste0(wd, 'output/figs/figSX_SAfits_classB_MCmn.csv')
+sdTabP = paste0(wd, 'output/figs/figSX_SAfits_classB_MCsd.csv')
+hTabPath = sub(outPath, paste0(tabDirPath, 'ensembleHistTabs/'), classB_fP)
+ensembleTabPath = sub(outPath, paste0(tabDirPath, 'ensembleOutputTabs/'), classB_fP)
+nClassB = length(classB_fP)
+print(paste("Class B Basins:", paste(classB_fN, collapse=" ")))
+
+# get basin area in km2:
+basinArea = hBASIN$area_km2[match(classB_fN, hBASIN$MAIN_BAS)] #132773914
+
+# if needed, calculate mean & stdev fits for Class A basins:
+# Class A basins contain >250,000 river measurements:
+io=0;if(io==1){
+  classA_fP = as.character(nGRWLperBasTab$fP[nGRWLperBasTab$nGRWLperBas>250000])
+  classA_fN = nGRWLperBasTab$fN[nGRWLperBasTab$nGRWLperBas>250000]
+  
+  for (i in 1:length(classA_fP)){
+    # read in table containing stastistical results of each Monte Carlo simulation
+    # run and take mean and stdev of ensembles:
+    if (i == 1){
+      classAensembleTab = read.csv(ensembleTabPath[i], header=T)
+    }else{
+      classAensembleTab = rbind(classAensembleTab, read.csv(ensembleTabPath[i], header=T))
+    }
+  }
+  mnTab = as.data.frame(t(colMeans(classAensembleTab, na.rm=T)))
+  sdTab = as.data.frame(t(apply(classAensembleTab, 2, sd)))
+}
+
+# create list of statistical parameters derived from class A basins:
+gpFit = list(
+  xm = 32.59215, #mnTab$pXmin/reducer,
+  alpha = 0.956046, #mnTab$pMCalpha,
+  stdev = 0.06185113 #sdTab$pMCalpha
+)
+
+# get start time:
+old <- Sys.time() 
+
+# set up output pdf:
+# pdf(pdfOut, width=15, height=9)
+# par(mfrow=c(4,5))
+# par(oma=c(3,3,0,0), mar=c(0,0,0,0))
+
+# calculate RSSA in each basin:
+m = 1
+for (i in 1:20){#nClassB){
+  
+  print(paste('i =',i, ' of ', nClassB,', fN = ', classB_fN[i]))
+  
+  # read in GRWL data by basin:
+  csv_raw = read.csv(classB_fP[i], header=T)
+  N_raw = nrow(csv_raw)
+  
+  # Monte Carlo error propogation: ####
+  for (j in 1:nRun){
+    
+    print(paste("Run:", j))
+    
+    # reset GRWL table to original:
+    csv = csv_raw
+    
+    # generate monte carlo simulation width pertubations:
+    w_perturb = rnorm(N_raw, nfit[1], nfit[2])
+    csv$width_m = csv$width_m + w_perturb
+    
+    # remove data with widths<90m, elev<0m, lakes, canals:
+    keep = csv$width_m>wMin & 
+      csv$elev_m>minElev & 
+      csv$lakeFlag!=1 & 
+      csv$lakeFlag!=3 
+    csv = csv[keep,]
+    N = nrow(csv)
+    
+    # calc river distance, width, surface area, sum river area, max discrete area value: 
+    # calculate distance between each adjacent GRWL centerline cell:
+    d = distCalc(csv)
+    w = csv$width_m/reducer
+    A_raw = w*d
+    A = A_raw[A_raw>Amin]
+    sumA = sum(A)
+    Amax = max(A)
+    Alen = length(A)
+    # calculate the average number of channels: 
+    nChan = mean(csv$nchannels)
+    
+    # MLE fit: ####
+    
+    # set std=T to calc. std dev of fit using MLE optimization,
+    # which is slow and produces negligible std dev vals:
+    pFit = pareto.mle(x=A, std=F)
+    
+    # calculate GOF statistics with X2 and KS test:
+    h = hist(A[A<max(figBreaks)], figBreaks/reducer, plot=F)
+    jA = jitter(A) # to prevent ties in the following GOF tests
+    pGOF = suppressWarnings(GOF(pFit, h, jA))
+    
+    
+    # add histogram information to table to be in plot:
+    if (j == 1){
+      hTab = as.data.frame(array(0, c(nRun, length(figBreaks))))
+      names(hTab) = round(figBreaks)
+    }
+    hTab[j,1:length(h$counts)] = h$counts
+    
+    
+    # RSSA estimate with uncertainty: ####
+    
+    # calculate total surface area of rivers and streams by extending 
+    # RSSA abundance to smaller rivers, and calc confidence intervals
+    # using a Monte Carlo simulation:
+    pRSSAextrap = RSSAextrapolater(pFit, fOaMean, fOaSD, Amin, Amax, N=1, sumA)
+    # global 
+    gpRSSAextrap = RSSAextrapolater(gpFit, fOaMean, fOaSD, Amin, Amax, N=1, sumA)
+    
+    # calculate the % of land surface occupied by rivers and streams: 
+    obs_prcnt = 100*sumA*reducer*1e-6/basinArea[i]
+    pRSSA_prcnt = 100*pRSSAextrap$meanRSSA/basinArea[i]
+    pRSSA_MC_prct = 100*pRSSAextrap$MCRSSA/basinArea[i]
+    gpRSSA_prcnt = 100*gpRSSAextrap$meanRSSA/basinArea[i]
+    gpRSSA_MC_prct = 100*gpRSSAextrap$MCRSSA/basinArea[i]
+    
+    # fill in table with outputs of ensemble run: ####
+    ensembleTab[j,] =
+      as.vector(c(
+        fN[i], 
+        basinArea[i],
+        length(which(keep)), 
+        bClass,
+        nChan,
+        Amax,
+        sum(reducer*mL*1e-6*csv$width_m[csv$lakeFlag!=1 & csv$lakeFlag!=3]), 
+        sumA*reducer*1e-6,
+        # Class B basins:
+        gpRSSAextrap$meanRSSA, 
+        gpRSSAextrap$MCRSSA, 
+        gpRSSA_prcnt, 
+        gpRSSA_MC_prct, 
+        gpFit$xm*reducer, 
+        gpRSSAextrap$MCAlpha,
+        gpRSSAextrap$MCfOw,
+        # Class A basins:
+        pRSSAextrap$meanRSSA, 
+        pRSSAextrap$MCRSSA, 
+        pRSSA_prcnt, 
+        pRSSA_MC_prct, 
+        pFit$xm*reducer, 
+        pRSSAextrap$MCAlpha,
+        pRSSAextrap$MCfOw,
+        pGOF$X2, 
+        pGOF$X2_p, 
+        pGOF$KS_D, 
+        pGOF$KS_p
+      ))
+    
+  } # end Monte Carlo simulation
+  
+  # write out ensemble histogram table:
+  write.csv(hTab, hTabPath[i], row.names=F)
+  # write out ensemble output table:
+  write.csv(ensembleTab, ensembleTabPath[i], row.names=F)
+  
+  hist(as.numeric(ensembleTab$pMCRSSA_km2))
+  abline(v=ensembleTab$pRSSA_km2)
+  
+  # Sensitivity scatter for first order width threshold:
+  #plot(ensembleTab$pMCfOw, ensembleTab$pMCRSSA_km2)
+  # Sensitivity scatter for pareto alpha (slope param):
+  #plot(ensembleTab$pMCalpha, ensembleTab$pMCRSSA_km2)
+  # Sensitivity scatter for observed river surface area:
+  #plot(ensembleTab$obSA_gt90m_km2, ensembleTab$pMCRSSA_km2)
+  
+  # take column means and add them to the mnTab output table:
+  mat = matrix(as.numeric(unlist(ensembleTab)), nrow=nRun)
+  mnTab[m, ] = colMeans(mat, na.rm=T)
+  sdTab[m, ] = apply(mat, 2, sd)
+  
+  # Plot histogram and Pareto fits (Fig. 2b):
+  # histPlot(fOaMeans, 
+  #          mnTab$Amax[m], 
+  #          pFit=list(xm=mnTab$pXmin[m]/reducer, 
+  #                    alpha=mnTab$pMCalpha[m],
+  #                    stdev=sdTab$pMCalpha[m]),
+  #          gpFit, 
+  #          mnTab$obSA_gt90m_km2[m]*reducer^2, #sdTab$obSA_gt90m_km2[m] 
+  #          figBreaks, 
+  #          round(as.vector(colMeans(hTab, na.rm=T))),
+  #          mnTab$nObsA[m], #sdTab$nObsA[m]
+  #          int, 
+  #          pRSSAextrap = list(meanRSSA=mnTab$pRSSA_km2[m],
+  #                             MCRSSA=sdTab$pRSSA_km2[m]),
+  #          gpRSSAextrap, 
+  #          100*mnTab$obSA_gt90m_km2[m]/basinArea, # 100*sdTab$obSA_gt90m_km2[m]/basinArea  
+  #          mnTab$pRSSA_pcnt[m], #sdTab$pSA_pcn[m]t
+  #          mnTab$gRSSA_pcnt[m], #sdTab$gRSSA_pcnt[m], 
+  #          pGOF = list(X2=mnTab$pX2_stat[m], 
+  #                      X2_p=mnTab$pX2_p[m], 
+  #                      KS_D=mnTab$pKS_D[m], 
+  #                      KS_p=mnTab$pKS_p[m]), 
+  #          # sdTab$pX2_stat[m], sdTab$pX2_p[m], sdTab$pKS_D[m], sdTab$pKS_p[m], 
+  #          m)
+  
+  m = m + 1
+}
+
+
+# round columns of mnTab:
+mnTabRound = tabRounder(mnTab)
+sdTabRound = tabRounder(sdTab)
+
+# write out mean and stdev output tables:
+write.csv(mnTabRound, mnTabP, row.names=F)
+write.csv(sdTabRound, sdTabP, row.names=F)
+
+# dev.off()
+# cmd = paste('open', pdfOut)
+# system(cmd)
+
+new = Sys.time() - old
+print(new) 
+
+# add up the total observed & extrapolated river surface area in Class A basins:
+classB_obs_gt90m = sum(mnTab$obSA_gt90m_km2)
+classB_obs = sum(mnTab$obSA_km2)
+classB_RSSA = sum(mnTab$pRSSA_km2)
+classB_BasinA = sum(mnTab$basinA_km2)
+print(paste("Class B basins observed %RSSA widths >90m:", round(100*classB_obs_gt90m/classB_BasinA,2), "%"))
+print(paste("Class B basins observed %RSSA all widths:", round(100*classB_obs/classB_BasinA,2), "%"))
+print(paste("Class B basins extrapolated %RSSA:", round(100*classB_RSSA/classB_BasinA,2), "%"))
+
+# add uncertainty:
+RSSA_km2 = round(c(sum(as.numeric(mnTab$pRSSA_km2)), 
+                   + sum(as.numeric(sdTab$pRSSA_km2)), 
+                   sum(as.numeric(sdTab$pRSSA_km2))))
+
+
+print("extrapolated Class B RSSA:")
+print(RSSA_km2)
+print(100*RSSA_km2/sum(mnTab$basinA_km2))
 
 
 
 
+##############################################################################
+# Plot Fig. S6: Pareto fits in each Class B basin
+##############################################################################
+
+# set up output pdf:
+pdfOut = paste0(wd, 'output/figs/figSX_ClassB.pdf')
+pdf(pdfOut, width=7, height=9)
+par(mfrow=c(8,5))
+par(oma=c(3,3.5,0,0.5), mar=c(0,0,0,0))
+#PlotOrder = c(5, )
+
+xlim = range(figBreaks)
+ylim = c(1, 3e6)
+
+hTabPath = sub(outPath, paste0(tabDirPath, 'ensembleHistTabs/'), classB_fP)
+ensembleTabPath = sub(outPath, paste0(tabDirPath, 'ensembleOutputTabs/'), classB_fP)
+
+mnTab = read.csv(mnTabP, header=T)
+sdTab = read.csv(sdTabP, header=T)
+
+# for each class A basin, plot RSSA histogram:
+for (i in 1:nClassB){
+  # read in table containing stastistical results of each Monte Carlo simulation
+  # run and take mean and stdev of ensembles:
+  ensembleTab = read.csv(ensembleTabPath[i], header=T)
+  ensembleTab$bClass = 2 # TEMP
+  mnTab = as.data.frame(t(colMeans(ensembleTab, na.rm=T)))
+  sdTab = as.data.frame(t(apply(ensembleTab, 2, sd)))
+  
+  # read in binned histogram data and take mean and stdev of ensembles:
+  dTab = read.csv(hTabPath[i], header=T)
+  dMn = round(colMeans(dTab))
+  dSD = round(apply(dTab, 2, sd))
+  
+  # get histogram breaks:
+  # FIXME: rerun MC and remove reducer below:
+  #breaks = as.numeric(sub("X", "", names(dTab)))
+  breaks=figBreaks
+  xlim = range(breaks)
+  lB = c(breaks[-length(breaks)])
+  rB = breaks[-1]
+  mid = colMeans(rbind(lB, rB))
+  
+  # plot RSSA histogram:
+  # # quartile histogram:
+  # plotLimInd = which(breaks<=xlim[2])
+  # quarts = apply(dTab, 2, quantile, probs=c(0.25, 0.5, 0.75))[,plotLimInd[-length(breaks)]]
+  plot(NA, 
+       xlim=xlim, 
+       ylim=ylim,
+       xlab=paste("Area (m2)"), 
+       ylab="N measurements",
+       type='n', 
+       log='xy',
+       xaxt='n',
+       yaxt='n',
+       las=T)
+  if(i %in% c(16:20)){
+    xAxis = c(1e4, 1e5, 1e6)
+    axis(1, at=xAxis, labels=formatC(xAxis, digits=0, format="e"), lwd=0.5)
+  }
+  if(i %in% c(1,6,11,16)){
+    yAxis = c(1e0, 1e2, 1e4, 1e6)
+    axis(2, at=yAxis, labels=formatC(yAxis, digits=0, format="e"), las=1, lwd=0.5)
+  }
+  zC = dMn>0
+  polygon(x=rbind(lB[zC], rB[zC], rB[zC], lB[zC], NA),
+          y=rbind(dMn[zC], dMn[zC], 
+                  ylim[1], ylim[1], NA),
+          bty="n", lwd=0.7, border=NA, col=rgb(0.7, 0.7, 0.7, 1))
+  
+  # add 1st and 3rd quartile uncertainty bars:
+  # zC = quarts[1,]>0 & quarts[2,]>0 & quarts[3,]>0
+  # arrows(mid[zC], quarts[1,zC], mid[zC], quarts[3,zC],
+  #        code=3, length=0.018, angle=90, lwd=0.5)
+  
+  # add standard deviation (1-alpha) bar to each bin:
+  lD = dMn - dSD
+  uD = dMn + dSD
+  zC = dMn>0 & lD>0 & uD>0
+  segments(x0=mid[zC], x1=mid[zC], y0=lD[zC], y1=uD[zC], col=1, lwd=0.7)
+  
+  # Pareto fit over observed data:
+  # FIX ME:# FIX ME:# FIX ME:# FIX ME:# FIX ME:# FIX ME:
+  # # FIX ME: rerun MC ensemble then remove reducer multiplier below:
+  y1 = dpareto(mnTab$pXmin, mnTab$pXmin, mnTab$pMCalpha)*mnTab$nObs*int*reducer
+  y2 = dpareto(mnTab$Amax*reducer, mnTab$pXmin, mnTab$pMCalpha)*mnTab$nObs*int*reducer
+  segments(mnTab$pXmin, y1, mnTab$Amax*reducer, y2, col=2, lwd=1.8)
+  
+  # Class A mean fit:
+  y1 = dpareto(mnTab$pXmin, mnTab$pXmin, mnTab$gMCalpha)*mnTab$nObs*int*reducer
+  y2 = dpareto(mnTab$Amax*reducer, mnTab$pXmin, mnTab$gMCalpha)*mnTab$nObs*int*reducer
+  segments(mnTab$pXmin, y1, mnTab$Amax*reducer, y2, col=4, lwd=1.8)
+  
+  # # add alpha uncertainty bars (too small to be seen):
+  # y1a = dpareto(mnTab$pXmin, mnTab$pXmin, mnTab$pMCalpha+sdTab$pMCalpha)*mnTab$nObsA*int
+  # y1b = dpareto(mnTab$pXmin, mnTab$pXmin, mnTab$pMCalpha-sdTab$pMCalpha)*mnTab$nObsA*int
+  # y2a = dpareto(mnTab$Amax, mnTab$pXmin, mnTab$pMCalpha+sdTab$pMCalpha)*mnTab$nObsA*int
+  # y2b = dpareto(mnTab$Amax, mnTab$pXmin, mnTab$pMCalpha-sdTab$pMCalpha)*mnTab$nObsA*int
+  # 
+  # polygon(x = c(mnTab$pXmin, mnTab$pXmin, mnTab$Amax, mnTab$Amax),
+  #         y = c(y1a, y1b, y2b, y2a),
+  #         col=rgb(1,0,0,01), border=NA)
+  
+  # add lagend:
+  legend("topright",
+         c(paste0(substr(paste0("0", i), nchar(i), nchar(i)+1), ': ', fN[i]),
+           paste0("α = ", round(mnTab$pMCalpha, 2), "±", formatC(round(sdTab$pMCalpha,4), format="g"))),
+         xjust=0, text.col=c(1,4), bty="n", cex=1)
+}
+
+dev.off()
+cmd = paste('open', pdfOut)
+system(cmd)
+
+# google how to adjust box line width
+# google how to make one line of legend text bold
+
+
+
+
+
+
+
+##############################################################################
 # Attach mnTab attributes to hydroBASIN shapefile:
 ##############################################################################
 io = 0; if (io == 1){
@@ -1045,216 +1392,3 @@ io = 0; if (io == 1){
   write.dbf(newhBASIN, hydroBASINpath)
   
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#### CLASS B BASIN CODE:
-
-# get start time:
-old <- Sys.time() 
-
-# set up output pdf:
-pdf(pdfOut, width=15, height=9)
-par(mfrow=c(4,5))
-par(oma=c(3,3,0,0), mar=c(0,0,0,0))
-
-
-m = 1
-for (i in 1:length(fP)){ 
-  
-  # read in and filter GRWL data: ####
-  csv_raw = read.csv(fP[i], header=T)
-  
-  # remove data with widths<100m, elev<1m, lakes, canals:
-  keep = csv_raw$width_m>wMin & 
-    csv_raw$elev_m>minElev & 
-    csv_raw$lakeFlag!=1 & 
-    csv_raw$lakeFlag!=3 
-  
-  N = length(which(keep))
-  
-  # skip basin if there are less than the minimum number of observations:
-  if (N < minNobs){ next }
-  
-  print(paste('i =',i, ' of ', length(fP),', fN = ', fN[i]))
-  
-  # calculate the average number of channels: 
-  nChan = mean(csv_raw$nchannels[keep])
-  # calculate distance between each adjacent GRWL centerline cell:
-  d = distCalc(csv_raw[keep,])
-  
-  
-  # Monte Carlo error propogation simulation ####
-  for (j in 1:nRun){
-    
-    print(paste("Run:", j))
-    # reset csv to original table:
-    csv = csv_raw[keep, ]
-    
-    # generate monte carlo simulation pertubations:
-    w_perturb = rnorm(N, nfit[1], nfit[2])
-    
-    # calc width, distance, river area, sum river area, maximum area value: 
-    w_raw = csv$width_m + w_perturb
-    w = w_raw/reducer
-    A_raw = w*d
-    A = A_raw[A_raw>Amin]
-    sumA = sum(A)
-    Amax = max(A)
-    Alen = length(A)
-    
-    
-    
-    # MLE fit: ####
-    
-    # set std=T to calc. std dev of fit using MLE optimization,
-    # which is slow and produces negligible std dev vals:
-    pFit = pareto.mle(x=A, std=F) 
-    
-    # calculate GOF statistics with X2 and KS test:
-    breaks = seq(Amin, Amax+int, int)
-    h = hist(A, breaks, plot=F)
-    jA = jitter(A) # to prevent ties in the following GOF tests
-    pGOF = suppressWarnings(GOF(pFit, h, jA))
-    
-    # add histogram information to table to be in plot:
-    if (j == 1){
-      hTab = as.data.frame(array(NA, c(nRun, length(h$mids))))
-    }
-    hCounts = c(h$counts, rep(0, 100))
-    hTab[j,] = hCounts[1:ncol(hTab)]
-    
-    
-    # RSSA estimate with added uncertainty: ####
-    
-    # calculate total surface area of rivers and streams by extending the
-    # RSSA abundance to smaller rivers, and calculate confidence intervals
-    # using a Monte Carlo simulation:
-    pMcarlo = mCarloUncertProp(pFit, fOaMean, fOaSD, Amin, Amax, N=1, sumA)
-    # global 
-    gpMcarlo = mCarloUncertProp(gpFit, fOaMean, fOaSD, Amin, Amax, N=1, sumA)
-    
-    # calculate the % of basin occupied by rivers and streams: 
-    basinArea = hBASIN$area_km2[hBASIN$MAIN_BAS == fN[i]]
-    obs_prcnt = 100*sumA*reducer*1e-6/basinArea
-    pSA_prcnt = 100*pMcarlo$meanSimSA/basinArea
-    pSA_sd_prct = 100*pMcarlo$sdSimSA/basinArea
-    gpSA_prcnt = 100*gpMcarlo$meanSimSA/basinArea
-    gpSA_sd_prct = 100*gpMcarlo$sdSimSA/basinArea
-    
-    # fill in table with outputs of ensemble run: ####
-    ensembleTab[j,] =
-      as.vector(c(
-        fN[i], 
-        basinArea,
-        length(which(keep)), 
-        Alen,
-        nChan,
-        Amax,
-        sum(reducer*mL*1e-6*
-              csv$width_m[csv$lakeFlag!=1 & csv$lakeFlag!=3]), 
-        sumA*reducer*1e-6,
-        # global fits:
-        gpMcarlo$meanSimSA, 
-        gpMcarlo$sdSimSA, 
-        gpSA_prcnt, 
-        gpSA_sd_prct, 
-        gpFit$xm*reducer, 
-        gpFit$alpha,
-        gpFit$stdev,
-        # basin fits:
-        pMcarlo$meanSimSA, 
-        pMcarlo$sdSimSA, 
-        pSA_prcnt, 
-        pSA_sd_prct, 
-        pFit$xm*reducer, 
-        pFit$alpha,
-        pFit$stdev,
-        pGOF$X2, 
-        pGOF$X2_p, 
-        pGOF$KS_D, 
-        pGOF$KS_p
-      ))
-    
-    
-  } # end Monte Carlo simulation
-  
-  # write out ensemble histogram table:
-  write.csv(hTab, hTabPath[i], row.names=F)
-  # write out ensemble output table:
-  write.csv(ensembleTab, ensembleTabPath[i], row.names=F)
-  
-  
-  # take column means and add them to the mnTab output table:
-  mat = matrix(as.numeric(unlist(ensembleTab)), nrow=nRun)
-  mnTab[m, ] = colMeans(mat, na.rm=T)
-  sdTab[m, ] = apply(mat, 2, sd)
-  
-  # Plot histogram and Pareto fits (Fig. 2b):
-  histPlot(fOaMeans, 
-           mnTab$Amax[m], 
-           pFit=list(xm=mnTab$pXmin[m]/reducer, 
-                     alpha=mnTab$pAlpha[m],
-                     stdev=sdTab$pAlpha[m]),
-           gpFit, 
-           mnTab$obSA_gt90m_km2[m]*reducer^2, #sdTab$obSA_gt90m_km2[m] 
-           breaks, 
-           round(as.vector(colMeans(hTab, na.rm=T))),
-           mnTab$nObsA[m], #sdTab$nObsA[m]
-           int, 
-           pMcarlo = list(meanSimSA=mnTab$pSA_km2[m],
-                          sdSimSA=sdTab$pSA_km2[m]),
-           gpMcarlo, 
-           100*mnTab$obSA_gt90m_km2[m]/basinArea, # 100*sdTab$obSA_gt90m_km2[m]/basinArea  
-           mnTab$pSA_pcnt[m], #sdTab$pSA_pcn[m]t
-           mnTab$gSA_pcnt[m], #sdTab$gSA_pcnt[m], 
-           pGOF = list(X2=mnTab$pX2_stat[m], 
-                       X2_p=mnTab$pX2_p[m], 
-                       KS_D=mnTab$pKS_D[m], 
-                       KS_p=mnTab$pKS_p[m]), 
-           # sdTab$pX2_stat[m], sdTab$pX2_p[m], sdTab$pKS_D[m], sdTab$pKS_p[m], 
-           m)
-  
-  m = m + 1
-}
-
-# round columns of mnTab:
-mnTab = tabRounder(mnTab)
-sdTab = tabRounder(sdTab)
-
-# write out mean and stdev output tables:
-write.csv(mnTab, mnTabP, row.names=F)
-write.csv(sdTab, sdTabP, row.names=F)
-
-#mnTab = read.csv(mnTabP, header=T)
-#sdTab = read.csv(sdTabP, header=T)
-
-dev.off()
-cmd = paste('open', pdfOut)
-system(cmd)
-
-
-new = Sys.time() - old
-print(new) 
-
-
-
-
-
-
-
-
