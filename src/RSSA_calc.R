@@ -588,11 +588,6 @@ sdTabP = paste0(wd, 'output/figs/figS6_SAfits_classA_MCsd.csv')
 hTabPath = sub(outPath, paste0(tabDirPath, 'ensembleHistTabs/'), classA_fP)
 ensembleTabPath = sub(outPath, paste0(tabDirPath, 'ensembleOutputTabs/'), classA_fP)
 
-# for (i in 1:nClassA){
-#   print(i)
-#   print(file.exists(ensembleTabPath[i]))
-# }
-
 nClassA = length(classA_fP)
 print(paste("Class A Basins:", paste(classA_fN, collapse=" ")))
 
@@ -602,46 +597,37 @@ basinArea = hBASIN$area_km2[match(classA_fN, hBASIN$MAIN_BAS)] #132773914
 # get start time:
 old <- Sys.time() 
 
-# set up output pdf:
-pdf(pdfOut, width=15, height=9)
-par(mfrow=c(4,5))
-par(oma=c(3,3,0,0), mar=c(0,0,0,0))
-
 # calculate RSSA in the basin:
-m = 1
-for (i in 11:nClassA){
+for (i in 1:nClassA){
   
   print(paste('i =',i, ' of ', nClassA,', fN = ', classA_fN[i]))
   
-  # read in GRWL data by basin:
+  # read in original GRWL data by basin:
   csv_raw = read.csv(classA_fP[i], header=T)
   N_raw = nrow(csv_raw)
-  
-  # get basin area in km2:
-  basinArea = hBASIN$area_km2[hBASIN$MAIN_BAS == classA_fN[i]] #132773914
   
   # Monte Carlo error propogation: ####
   for (j in 1:nRun){
     
     print(paste("Run:", j))
     
-    # reset GRWL table to original:
+    # reset perturbed GRWL table to original GRWL data: 
     csv = csv_raw
     
     # generate monte carlo simulation width pertubations:
     w_perturb = rnorm(N_raw, nfit[1], nfit[2])
     csv$width_m = csv$width_m + w_perturb
     
-    # remove data with widths<90m, elev<0m, lakes, canals:
+    # remove GRWL data with widths<90m, elev<0m, lakes, canals:
     keep = csv$width_m>wMin & 
       csv$elev_m>minElev & 
       csv$lakeFlag!=1 & 
       csv$lakeFlag!=3 
     csv = csv[keep,]
-    N = nrow(csv)
     
     # calc river distance, width, surface area, sum river area, max discrete area value: 
     # calculate distance between each adjacent GRWL centerline cell:
+    N  = nrow(csv)
     d = distCalc(csv)
     w = csv$width_m/reducer
     A_raw = w*d
@@ -653,7 +639,7 @@ for (i in 11:nClassA){
     nChan = mean(csv$nchannels)
 
     
-    # MLE fit: ####
+    # Maximum Liklihood Estimation fit: ####
     
     # set std=T to calc. std dev of fit using MLE optimization,
     # which is slow and produces negligible std dev vals:
@@ -673,8 +659,7 @@ for (i in 11:nClassA){
     hTab[j,1:length(h$counts)] = h$counts
     
     
-    # RSSA estimate with uncertainty: ####
-    
+    # RSSA estimate with uncertainty: 
     # calculate total surface area of rivers and streams by extending 
     # RSSA abundance to smaller rivers, and calc confidence intervals
     # using a Monte Carlo simulation:
@@ -729,9 +714,9 @@ for (i in 11:nClassA){
   # write out ensemble output table:
   write.csv(ensembleTab, ensembleTabPath[i], row.names=F)
   
-  hist(as.numeric(ensembleTab$pMCRSSA_km2))
-  abline(v=ensembleTab$pRSSA_km2)
-  
+  # plots: 
+  # hist(as.numeric(ensembleTab$pMCRSSA_km2))
+  # abline(v=ensembleTab$pRSSA_km2)
   # Sensitivity scatter for first order width threshold:
   #plot(ensembleTab$pMCfOw, ensembleTab$pMCRSSA_km2)
   # Sensitivity scatter for pareto alpha (slope param):
@@ -739,42 +724,8 @@ for (i in 11:nClassA){
   # Sensitivity scatter for observed river surface area:
   #plot(ensembleTab$obSA_gt90m_km2, ensembleTab$pMCRSSA_km2)
   
-  # take column means and add them to the mnTab output table:
-  mat = matrix(as.numeric(unlist(ensembleTab)), nrow=nRun)
-  mnTab[m, ] = colMeans(mat, na.rm=T)
-  sdTab[m, ] = apply(mat, 2, sd)
   
-  # Plot histogram and Pareto fits (Fig. 2b):
-  # histPlot(fOaMeans, 
-  #          mnTab$Amax[m], 
-  #          pFit=list(xm=mnTab$pXmin[m]/reducer, 
-  #                    alpha=mnTab$pMCalpha[m],
-  #                    stdev=sdTab$pMCalpha[m]),
-  #          gpFit, 
-  #          mnTab$obSA_gt90m_km2[m]*reducer^2, #sdTab$obSA_gt90m_km2[m] 
-  #          figBreaks, 
-  #          round(as.vector(colMeans(hTab, na.rm=T))),
-  #          mnTab$nObsA[m], #sdTab$nObsA[m]
-  #          int, 
-  #          pRSSAextrap = list(meanRSSA=mnTab$pRSSA_km2[m],
-  #                         MCRSSA=sdTab$pRSSA_km2[m]),
-  #          gpRSSAextrap, 
-  #          100*mnTab$obSA_gt90m_km2[m]/basinArea, # 100*sdTab$obSA_gt90m_km2[m]/basinArea  
-  #          mnTab$pRSSA_pcnt[m], #sdTab$pSA_pcn[m]t
-  #          mnTab$gRSSA_pcnt[m], #sdTab$gRSSA_pcnt[m], 
-  #          pGOF = list(X2=mnTab$pX2_stat[m], 
-  #                      X2_p=mnTab$pX2_p[m], 
-  #                      KS_D=mnTab$pKS_D[m], 
-  #                      KS_p=mnTab$pKS_p[m]), 
-  #          # sdTab$pX2_stat[m], sdTab$pX2_p[m], sdTab$pKS_D[m], sdTab$pKS_p[m], 
-  #          m)
-  m = m + 1
-}
-
-
-dev.off()
-cmd = paste('open', pdfOut)
-system(cmd)
+} # end basin RSSA calculation
 
 new = Sys.time() - old
 print(new) 
@@ -812,20 +763,16 @@ print(100*RSSA_km2/sum(mnTab$basinA_km2))
 ##############################################################################
 
 # set up output pdf:
-pdfOut = paste0(wd, 'output/figs/figS6_ClassA.pdf')
+pdfOut = paste0(wd, 'output/figs/figS6_ClassA_fits.pdf')
 pdf(pdfOut, width=7, height=4.5)
 par(mfrow=c(4,5))
 par(oma=c(3,3.5,0,0.5), mar=c(0,0,0,0))
-#PlotOrder = c(5, )
 
 xlim = range(figBreaks)
 ylim = c(1, 3e6)
 
 hTabPath = sub(outPath, paste0(tabDirPath, 'ensembleHistTabs/'), classA_fP)
 ensembleTabPath = sub(outPath, paste0(tabDirPath, 'ensembleOutputTabs/'), classA_fP)
-
-mnTab = read.csv(mnTabP, header=T)
-sdTab = read.csv(sdTabP, header=T)
 
 # for each class A basin, plot RSSA histogram:
 for (i in 1:nClassA){
@@ -835,24 +782,38 @@ for (i in 1:nClassA){
   mnTab = as.data.frame(t(colMeans(ensembleTab, na.rm=T)))
   sdTab = as.data.frame(t(apply(ensembleTab, 2, sd)))
   
+  pTotA = mnTab$nObs*int*reducer
+  
+  # print(i)
+  # print( paste(round(mean(ensembleTab$pMCRSSA_km2),3), round(median(ensembleTab$pMCRSSA_km2),3)))
+  # print( paste(round(mean(ensembleTab$pRSSA_km2),3), round(median(ensembleTab$pRSSA_km2),3)))
+  print( paste(round(mean(ensembleTab$pRSSA_pcnt),3), round(median(ensembleTab$pRSSA_pcnt),3)))
+  print( paste(round(mean(ensembleTab$pMCRSSA_pcnt),3), round(median(ensembleTab$pMCRSSA_pcnt),3)))
+  
   # read in binned histogram data and take mean and stdev of ensembles:
   dTab = read.csv(hTabPath[i], header=T)
-  dMn = round(colMeans(dTab))
-  dSD = round(apply(dTab, 2, sd))
+  dMn = (colMeans(dTab))
+  dMn[dMn < ylim[1]] = ylim[1]
+  dSD = (apply(dTab, 2, sd))
   
   # get histogram breaks:
-  # FIXME: rerun MC and remove reducer below:
-  #breaks = as.numeric(sub("X", "", names(dTab)))
-  breaks=figBreaks
-  xlim = range(breaks)
-  lB = c(breaks[-length(breaks)])
-  rB = breaks[-1]
+  lB = c(figBreaks[-length(figBreaks)])
+  rB = figBreaks[-1]
   mid = colMeans(rbind(lB, rB))
+  lD = dMn - dSD
+  lD[lD < ylim[1]] = ylim[1]
+  uD = dMn + dSD
+  uD[uD < ylim[1]] = ylim[1]
+  zC = dMn>0 # & lD>0 & uD>0
+  # alternative: instead of mean and std, use 1st, 2nd, & 3rd quartile:
+  # zC = quarts[1,]>0 & quarts[2,]>0 & quarts[3,]>0
+  # arrows(mid[zC], quarts[1,zC], mid[zC], quarts[3,zC],
+  #        code=3, length=0.018, angle=90, lwd=0.5)
   
   # plot RSSA histogram:
   # # quartile histogram:
-  # plotLimInd = which(breaks<=xlim[2])
-  # quarts = apply(dTab, 2, quantile, probs=c(0.25, 0.5, 0.75))[,plotLimInd[-length(breaks)]]
+  # plotLimInd = which(figBreaks<=xlim[2])
+  # quarts = apply(dTab, 2, quantile, probs=c(0.25, 0.5, 0.75))[,plotLimInd[-length(figBreaks)]]
   plot(NA, 
        xlim=xlim, 
        ylim=ylim,
@@ -873,41 +834,166 @@ for (i in 1:nClassA){
     yAxis = c(1e0, 1e2, 1e4, 1e6)
     axis(2, at=yAxis, labels=formatC(yAxis, digits=0, format="e"), las=1, lwd=0.5)
   }
-  zC = dMn>0
+  
   polygon(x=rbind(lB[zC], rB[zC], rB[zC], lB[zC], NA),
           y=rbind(dMn[zC], dMn[zC], 
                   ylim[1], ylim[1], NA),
           bty="n", lwd=0.7, border=NA, col=rgb(0.7, 0.7, 0.7, 1))
   
-  # add 1st and 3rd quartile uncertainty bars:
-  # zC = quarts[1,]>0 & quarts[2,]>0 & quarts[3,]>0
-  # arrows(mid[zC], quarts[1,zC], mid[zC], quarts[3,zC],
-  #        code=3, length=0.018, angle=90, lwd=0.5)
-  
   # add standard deviation (1-alpha) bar to each bin:
-  lD = dMn - dSD
-  uD = dMn + dSD
-  zC = dMn>0 & lD>0 & uD>0
-  segments(x0=mid[zC], x1=mid[zC], y0=lD[zC], y1=uD[zC], col=1, lwd=0.7)
+  segments(x0=mid[zC], x1=mid[zC], y0=lD[zC], y1=uD[zC], col=1, lwd=0.4)
 
   # Pareto fit over observed data:
   # FIX ME:# FIX ME:# FIX ME:# FIX ME:# FIX ME:# FIX ME:
   # # FIX ME: rerun MC ensemble then remove reducer multiplier below:
-  y1 = dpareto(mnTab$pXmin, mnTab$pXmin, mnTab$pMCalpha)*mnTab$nObs*int*reducer
-  y2 = dpareto(mnTab$Amax*reducer, mnTab$pXmin, mnTab$pMCalpha)*mnTab$nObs*int*reducer
-  segments(mnTab$pXmin, y1, mnTab$Amax*reducer, y2, col=4, lwd=1.8)
+  pTotA = mnTab$nObs*int*reducer
+  y1 = dpareto(mnTab$pXmin, mnTab$pXmin, mnTab$pMCalpha)*pTotA
+  y2 = dpareto(mnTab$Amax*reducer, mnTab$pXmin, mnTab$pMCalpha)*pTotA
+  segments(mnTab$pXmin, y1, mnTab$Amax*reducer, y2, col=4, lwd=1)
   
   # # add alpha uncertainty bars (too small to be seen):
-  # y1a = dpareto(mnTab$pXmin, mnTab$pXmin, mnTab$pMCalpha+sdTab$pMCalpha)*mnTab$nObsA*int
-  # y1b = dpareto(mnTab$pXmin, mnTab$pXmin, mnTab$pMCalpha-sdTab$pMCalpha)*mnTab$nObsA*int
-  # y2a = dpareto(mnTab$Amax, mnTab$pXmin, mnTab$pMCalpha+sdTab$pMCalpha)*mnTab$nObsA*int
-  # y2b = dpareto(mnTab$Amax, mnTab$pXmin, mnTab$pMCalpha-sdTab$pMCalpha)*mnTab$nObsA*int
+  # y1a = dpareto(mnTab$pXmin, mnTab$pXmin, mnTab$pMCalpha+sdTab$pMCalpha)*pTotA
+  # y1b = dpareto(mnTab$pXmin, mnTab$pXmin, mnTab$pMCalpha-sdTab$pMCalpha)*pTotA
+  # y2a = dpareto(mnTab$Amax, mnTab$pXmin, mnTab$pMCalpha+sdTab$pMCalpha)*pTotA
+  # y2b = dpareto(mnTab$Amax, mnTab$pXmin, mnTab$pMCalpha-sdTab$pMCalpha)*pTotA
   # 
   # polygon(x = c(mnTab$pXmin, mnTab$pXmin, mnTab$Amax, mnTab$Amax),
   #         y = c(y1a, y1b, y2b, y2a),
   #         col=rgb(1,0,0,01), border=NA)
 
-  # add lagend:
+  # add legend:
+  legend("topright",
+         c(paste0(substr(paste0("0", i), nchar(i), nchar(i)+1), ': ', fN[i]),
+           paste0("a = ", round(mnTab$pMCalpha, 2), "±", formatC(round(sdTab$pMCalpha,4), format="g"))),
+         xjust=0, text.col=c(1,4), bty="n", cex=1)
+}
+
+dev.off()
+cmd = paste('open', pdfOut)
+system(cmd)
+
+
+##############################################################################
+# Plot Fig. 3C: Pareto extrapolations in Class A basins
+##############################################################################
+
+# set up output pdf:
+pdfOut = paste0(wd, 'output/figs/figS3b_ClassA_extrap.pdf')
+pdf(pdfOut, width=7, height=4.5)
+par(mfrow=c(4,5))
+par(oma=c(3,3.5,0,0.5), mar=c(0,0,0,0))
+
+xlim = c(fOaMeans[1]*reducer, max(figBreaks))
+ylim = c(1, 1e12)
+
+hTabPath = sub(outPath, paste0(tabDirPath, 'ensembleHistTabs/'), classA_fP)
+ensembleTabPath = sub(outPath, paste0(tabDirPath, 'ensembleOutputTabs/'), classA_fP)
+
+# for each class A basin, plot RSSA histogram:
+for (i in 1:nClassA){
+  # read in table containing stastistical results of each Monte Carlo simulation
+  # run and take mean and stdev of ensembles:
+  ensembleTab = read.csv(ensembleTabPath[i], header=T)
+  mnTab = as.data.frame(t(colMeans(ensembleTab, na.rm=T)))
+  sdTab = as.data.frame(t(apply(ensembleTab, 2, sd)))
+  
+  pTotA = mnTab$nObs*int*reducer
+  
+  # read in binned histogram data and take mean and stdev of ensembles:
+  dTab = read.csv(hTabPath[i], header=T)
+  dSD = (apply(dTab, 2, sd))
+  dMn = (colMeans(dTab))
+  dMn[dMn < ylim[1] & dMn!=0] = ylim[1]
+  
+  # get histogram breaks:
+  lB = c(figBreaks[-length(figBreaks)])
+  rB = figBreaks[-1]
+  mid = colMeans(rbind(lB, rB))
+  lD = dMn - dSD
+  lD[lD < ylim[1]] = ylim[1]
+  
+  uD = dMn + dSD
+  uD[uD < ylim[1]] = ylim[1]
+  zC = dMn>0 # & lD>0 & uD>0
+  # alternative: instead of mean and std, use 1st, 2nd, & 3rd quartile:
+  # zC = quarts[1,]>0 & quarts[2,]>0 & quarts[3,]>0
+  # arrows(mid[zC], quarts[1,zC], mid[zC], quarts[3,zC],
+  #        code=3, length=0.018, angle=90, lwd=0.5)
+  
+  # plot RSSA histogram:
+  # # quartile histogram:
+  # plotLimInd = which(figBreaks<=xlim[2])
+  # quarts = apply(dTab, 2, quantile, probs=c(0.25, 0.5, 0.75))[,plotLimInd[-length(figBreaks)]]
+  plot(NA, 
+       xlim=xlim, 
+       ylim=ylim,
+       xlab=paste("RSSA (m2)"), 
+       ylab="N measurements",
+       bty='n',
+       type='n', 
+       log='xy',
+       xaxt='n',
+       yaxt='n',
+       las=T); box(lwd=0.5) 
+  if(i %in% c(16:20)){
+    xAxis = c(1e1, 1e3, 1e5)
+    axis(1, at=xAxis, labels=formatC(xAxis, digits=0, format="e"), lwd=0.5)
+  }
+  if(i %in% c(1,6,11,16)){
+    yAxis = c(1e0, 1e6, 1e12)
+    axis(2, at=yAxis, labels=formatC(yAxis, digits=0, format="e"), las=1, lwd=0.5)
+  }
+  # add histogram & std (1 sigma) segments to each bin:
+  polygon(x=rbind(lB[zC], rB[zC], rB[zC], lB[zC], NA),
+          y=rbind(dMn[zC], dMn[zC], 
+                  ylim[1], ylim[1], NA),
+          bty="n", lwd=0.7, border=NA, col=rgb(0.7, 0.7, 0.7, 1))
+  segments(x0=mid[zC], x1=mid[zC], y0=lD[zC], y1=uD[zC], col=1, lwd=0.4)
+  
+  # add Class A extrapolation polygon:
+  y1 = dpareto(fOaMeans[2]*reducer, mnTab$pXmin, mnTab$pMCalpha)*pTotA
+  y2 = dpareto(mnTab$pXmin, mnTab$pXmin, mnTab$pMCalpha)*pTotA
+  polygon(x = c(fOaMeans[2]*reducer, mnTab$pXmin, mnTab$pXmin, fOaMeans[2]*reducer),
+          y = c(y1, y2, ylim[1], ylim[1]),
+          col=rgb(0.85,0.85,0.85,1), border=NA)
+  
+  # add Class A mean fit:
+  y1 = dpareto(fOaMeans[2]*reducer, mnTab$pXmin, mnTab$pMCalpha)*pTotA
+  y2 = dpareto(mnTab$Amax*reducer, mnTab$pXmin, mnTab$pMCalpha)*pTotA
+  segments(fOaMeans[2]*reducer, y1, mnTab$Amax*reducer, y2, col=1, lwd=1)
+  
+  # add first order width uncertainty segments: 
+  y1 = dpareto(fOaMeans[1]*reducer, mnTab$pXmin, mnTab$pMCalpha)*pTotA
+  y2 = dpareto(fOaMeans[3]*reducer, mnTab$pXmin, mnTab$pMCalpha)*pTotA
+  segments(fOaMeans[1]*reducer, ylim[1], fOaMeans[1]*reducer, y1, col=1, lwd=1, lty=3)
+  segments(fOaMeans[3]*reducer, ylim[1], fOaMeans[3]*reducer, y2, col=1, lwd=1, lty=3)
+  # error arrows at top:
+  y1 = dpareto(fOaMeans[2]*reducer, mnTab$pXmin, mnTab$pMCalpha)*pTotA
+  y2 = dpareto(fOaMeans[3]*reducer, mnTab$pXmin, mnTab$pMCalpha)*pTotA
+  arrows(fOaMeans[2]*reducer, y1, fOaMeans[3]*reducer, y2, 0.05, 90, col=1, lwd=1.2)
+  y1 = dpareto(fOaMeans[2]*reducer, mnTab$pXmin, mnTab$pMCalpha)*pTotA
+  y2 = dpareto(fOaMeans[1]*reducer, mnTab$pXmin, mnTab$pMCalpha)*pTotA
+  arrows(fOaMeans[2]*reducer, y1, fOaMeans[1]*reducer, y2, 0.05, 90, col=1, lwd=1.2)
+  # error arrows at bottom:
+  y2 = dpareto(fOaMeans[2]*reducer, mnTab$pXmin, mnTab$pMCalpha)*pTotA
+  arrows(fOaMeans[2]*reducer, ylim[1], fOaMeans[1]*reducer, ylim[1], 0.05, 90, col=1, lwd=1.2)
+  y2 = dpareto(fOaMeans[2]*reducer, mnTab$pXmin, mnTab$pMCalpha)*pTotA
+  arrows(fOaMeans[2]*reducer, ylim[1], fOaMeans[3]*reducer, ylim[1], 0.05, 90, col=1, lwd=1.2)
+  
+  # add labels:
+  text(x=mid[1], 
+       y=exp(mean(log(c(dMn[1], ylim[1])))/2),
+       expression(bold(italic('Observed'))), pos=4, cex=0.7) 
+  text(x=exp(mean(log(c(xlim[1], mnTab$pXmin)))),
+       y=exp(mean(log(c(dMn[1], ylim[1])))/2),
+       expression(bold(italic('Estimated'))), cex=0.7) 
+  
+  #####
+  # add Class B MLE fit:
+
+  
+  
+  # add legend:
   legend("topright",
          c(paste0(substr(paste0("0", i), nchar(i), nchar(i)+1), ': ', fN[i]),
            paste0("a = ", round(mnTab$pMCalpha, 2), "±", formatC(round(sdTab$pMCalpha,4), format="g"))),
@@ -982,7 +1068,7 @@ io=0;if(io==1){
 # create list of statistical parameters derived from class A basins:
 gpFit = list(
   xm = 32.59215, #mnTab$pXmin/reducer,
-  alpha = 0.956046, #mnTab$pMCalpha,
+  alpha = 0.95, #mnTab$pMCalpha,
   stdev = 0.06185113 #sdTab$pMCalpha
 )
 
@@ -995,8 +1081,7 @@ old <- Sys.time()
 # par(oma=c(3,3,0,0), mar=c(0,0,0,0))
 
 # calculate RSSA in each basin:
-m = 1
-for (i in 1:20){#nClassB){
+for (i in 1:nClassB){
   
   print(paste('i =',i, ' of ', nClassB,', fN = ', classB_fN[i]))
   
@@ -1022,10 +1107,10 @@ for (i in 1:20){#nClassB){
       csv$lakeFlag!=1 & 
       csv$lakeFlag!=3 
     csv = csv[keep,]
-    N = nrow(csv)
     
     # calc river distance, width, surface area, sum river area, max discrete area value: 
     # calculate distance between each adjacent GRWL centerline cell:
+    N = nrow(csv)
     d = distCalc(csv)
     w = csv$width_m/reducer
     A_raw = w*d
@@ -1043,7 +1128,7 @@ for (i in 1:20){#nClassB){
     pFit = pareto.mle(x=A, std=F)
     
     # calculate GOF statistics with X2 and KS test:
-    h = hist(A[A<max(figBreaks)], figBreaks/reducer, plot=F)
+    h = hist(A[A<max(figBreaks/reducer)], figBreaks/reducer, plot=F)
     jA = jitter(A) # to prevent ties in the following GOF tests
     pGOF = suppressWarnings(GOF(pFit, h, jA))
     
@@ -1112,8 +1197,8 @@ for (i in 1:20){#nClassB){
   # write out ensemble output table:
   write.csv(ensembleTab, ensembleTabPath[i], row.names=F)
   
-  hist(as.numeric(ensembleTab$pMCRSSA_km2))
-  abline(v=ensembleTab$pRSSA_km2)
+  # hist(as.numeric(ensembleTab$pMCRSSA_km2))
+  # abline(v=ensembleTab$pRSSA_km2)
   
   # Sensitivity scatter for first order width threshold:
   #plot(ensembleTab$pMCfOw, ensembleTab$pMCRSSA_km2)
@@ -1121,39 +1206,9 @@ for (i in 1:20){#nClassB){
   #plot(ensembleTab$pMCalpha, ensembleTab$pMCRSSA_km2)
   # Sensitivity scatter for observed river surface area:
   #plot(ensembleTab$obSA_gt90m_km2, ensembleTab$pMCRSSA_km2)
-  
-  # take column means and add them to the mnTab output table:
-  mat = matrix(as.numeric(unlist(ensembleTab)), nrow=nRun)
-  mnTab[m, ] = colMeans(mat, na.rm=T)
-  sdTab[m, ] = apply(mat, 2, sd)
-  
-  # Plot histogram and Pareto fits (Fig. 2b):
-  # histPlot(fOaMeans, 
-  #          mnTab$Amax[m], 
-  #          pFit=list(xm=mnTab$pXmin[m]/reducer, 
-  #                    alpha=mnTab$pMCalpha[m],
-  #                    stdev=sdTab$pMCalpha[m]),
-  #          gpFit, 
-  #          mnTab$obSA_gt90m_km2[m]*reducer^2, #sdTab$obSA_gt90m_km2[m] 
-  #          figBreaks, 
-  #          round(as.vector(colMeans(hTab, na.rm=T))),
-  #          mnTab$nObsA[m], #sdTab$nObsA[m]
-  #          int, 
-  #          pRSSAextrap = list(meanRSSA=mnTab$pRSSA_km2[m],
-  #                             MCRSSA=sdTab$pRSSA_km2[m]),
-  #          gpRSSAextrap, 
-  #          100*mnTab$obSA_gt90m_km2[m]/basinArea, # 100*sdTab$obSA_gt90m_km2[m]/basinArea  
-  #          mnTab$pRSSA_pcnt[m], #sdTab$pSA_pcn[m]t
-  #          mnTab$gRSSA_pcnt[m], #sdTab$gRSSA_pcnt[m], 
-  #          pGOF = list(X2=mnTab$pX2_stat[m], 
-  #                      X2_p=mnTab$pX2_p[m], 
-  #                      KS_D=mnTab$pKS_D[m], 
-  #                      KS_p=mnTab$pKS_p[m]), 
-  #          # sdTab$pX2_stat[m], sdTab$pX2_p[m], sdTab$pKS_D[m], sdTab$pKS_p[m], 
-  #          m)
-  
-  m = m + 1
+
 }
+
 
 
 # round columns of mnTab:
@@ -1194,15 +1249,14 @@ print(100*RSSA_km2/sum(mnTab$basinA_km2))
 
 
 ##############################################################################
-# Plot Fig. S6: Pareto fits in each Class B basin
+# Plot Fig. SX: Pareto fits in Class B basins
 ##############################################################################
 
 # set up output pdf:
-pdfOut = paste0(wd, 'output/figs/figSX_ClassB.pdf')
-pdf(pdfOut, width=7, height=9)
-par(mfrow=c(8,5))
+pdfOut = paste0(wd, 'output/figs/figSX_ClassB_fits.pdf')
+pdf(pdfOut, width=7, height=4.5)
+par(mfrow=c(4,5))
 par(oma=c(3,3.5,0,0.5), mar=c(0,0,0,0))
-#PlotOrder = c(5, )
 
 xlim = range(figBreaks)
 ylim = c(1, 3e6)
@@ -1218,38 +1272,53 @@ for (i in 1:nClassB){
   # read in table containing stastistical results of each Monte Carlo simulation
   # run and take mean and stdev of ensembles:
   ensembleTab = read.csv(ensembleTabPath[i], header=T)
-  ensembleTab$bClass = 2 # TEMP
   mnTab = as.data.frame(t(colMeans(ensembleTab, na.rm=T)))
   sdTab = as.data.frame(t(apply(ensembleTab, 2, sd)))
   
+  pTotA = mnTab$nObs*int*reducer
+  
+  # print(i)
+  # print( paste(round(mean(ensembleTab$pMCRSSA_km2),3), round(median(ensembleTab$pMCRSSA_km2),3)))
+  # print( paste(round(mean(ensembleTab$pRSSA_km2),3), round(median(ensembleTab$pRSSA_km2),3)))
+  # print( paste(round(mean(ensembleTab$pRSSA_pcnt),3), round(median(ensembleTab$pRSSA_pcnt),3)))
+  # print( paste(round(mean(ensembleTab$pMCRSSA_pcnt),3), round(median(ensembleTab$pMCRSSA_pcnt),3)))
+  
   # read in binned histogram data and take mean and stdev of ensembles:
   dTab = read.csv(hTabPath[i], header=T)
-  dMn = round(colMeans(dTab))
-  dSD = round(apply(dTab, 2, sd))
+  dSD = (apply(dTab, 2, sd))
+  dMn = (colMeans(dTab))
+  dMn[dMn < ylim[1] & dMn!=0] = ylim[1]
   
   # get histogram breaks:
-  # FIXME: rerun MC and remove reducer below:
-  #breaks = as.numeric(sub("X", "", names(dTab)))
-  breaks=figBreaks
-  xlim = range(breaks)
-  lB = c(breaks[-length(breaks)])
-  rB = breaks[-1]
+  lB = c(figBreaks[-length(figBreaks)])
+  rB = figBreaks[-1]
   mid = colMeans(rbind(lB, rB))
+  lD = dMn - dSD
+  lD[lD < ylim[1]] = ylim[1]
+  uD = dMn + dSD
+  uD[uD < ylim[1]] = ylim[1]
+  zC = dMn>0 # & lD>0 & uD>0
+  # alternative: instead of mean and std, use 1st, 2nd, & 3rd quartile:
+  # zC = quarts[1,]>0 & quarts[2,]>0 & quarts[3,]>0
+  # arrows(mid[zC], quarts[1,zC], mid[zC], quarts[3,zC],
+  #        code=3, length=0.018, angle=90, lwd=0.5)
   
   # plot RSSA histogram:
   # # quartile histogram:
-  # plotLimInd = which(breaks<=xlim[2])
-  # quarts = apply(dTab, 2, quantile, probs=c(0.25, 0.5, 0.75))[,plotLimInd[-length(breaks)]]
+  # plotLimInd = which(figBreaks<=xlim[2])
+  # quarts = apply(dTab, 2, quantile, probs=c(0.25, 0.5, 0.75))[,plotLimInd[-length(figBreaks)]]
   plot(NA, 
        xlim=xlim, 
        ylim=ylim,
        xlab=paste("Area (m2)"), 
        ylab="N measurements",
+       bty='n',
        type='n', 
        log='xy',
        xaxt='n',
        yaxt='n',
        las=T)
+  box(lwd=0.5) 
   if(i %in% c(16:20)){
     xAxis = c(1e4, 1e5, 1e6)
     axis(1, at=xAxis, labels=formatC(xAxis, digits=0, format="e"), lwd=0.5)
@@ -1258,49 +1327,30 @@ for (i in 1:nClassB){
     yAxis = c(1e0, 1e2, 1e4, 1e6)
     axis(2, at=yAxis, labels=formatC(yAxis, digits=0, format="e"), las=1, lwd=0.5)
   }
-  zC = dMn>0
+  
   polygon(x=rbind(lB[zC], rB[zC], rB[zC], lB[zC], NA),
           y=rbind(dMn[zC], dMn[zC], 
                   ylim[1], ylim[1], NA),
           bty="n", lwd=0.7, border=NA, col=rgb(0.7, 0.7, 0.7, 1))
   
-  # add 1st and 3rd quartile uncertainty bars:
-  # zC = quarts[1,]>0 & quarts[2,]>0 & quarts[3,]>0
-  # arrows(mid[zC], quarts[1,zC], mid[zC], quarts[3,zC],
-  #        code=3, length=0.018, angle=90, lwd=0.5)
-  
   # add standard deviation (1-alpha) bar to each bin:
-  lD = dMn - dSD
-  uD = dMn + dSD
-  zC = dMn>0 & lD>0 & uD>0
-  segments(x0=mid[zC], x1=mid[zC], y0=lD[zC], y1=uD[zC], col=1, lwd=0.7)
+  segments(x0=mid[zC], x1=mid[zC], y0=lD[zC], y1=uD[zC], col=1, lwd=0.4)
   
-  # Pareto fit over observed data:
-  # FIX ME:# FIX ME:# FIX ME:# FIX ME:# FIX ME:# FIX ME:
-  # # FIX ME: rerun MC ensemble then remove reducer multiplier below:
-  y1 = dpareto(mnTab$pXmin, mnTab$pXmin, mnTab$pMCalpha)*mnTab$nObs*int*reducer
-  y2 = dpareto(mnTab$Amax*reducer, mnTab$pXmin, mnTab$pMCalpha)*mnTab$nObs*int*reducer
-  segments(mnTab$pXmin, y1, mnTab$Amax*reducer, y2, col=2, lwd=1.8)
+  # add Class A mean fit:
+  y1 = dpareto(mnTab$pXmin, mnTab$pXmin, mnTab$gMCalpha)*pTotA
+  y2 = dpareto(mnTab$Amax*reducer, mnTab$pXmin, mnTab$gMCalpha)*pTotA
+  segments(mnTab$pXmin, y1, mnTab$Amax*reducer, y2, col=2, lwd=1)
   
-  # Class A mean fit:
-  y1 = dpareto(mnTab$pXmin, mnTab$pXmin, mnTab$gMCalpha)*mnTab$nObs*int*reducer
-  y2 = dpareto(mnTab$Amax*reducer, mnTab$pXmin, mnTab$gMCalpha)*mnTab$nObs*int*reducer
-  segments(mnTab$pXmin, y1, mnTab$Amax*reducer, y2, col=4, lwd=1.8)
-  
-  # # add alpha uncertainty bars (too small to be seen):
-  # y1a = dpareto(mnTab$pXmin, mnTab$pXmin, mnTab$pMCalpha+sdTab$pMCalpha)*mnTab$nObsA*int
-  # y1b = dpareto(mnTab$pXmin, mnTab$pXmin, mnTab$pMCalpha-sdTab$pMCalpha)*mnTab$nObsA*int
-  # y2a = dpareto(mnTab$Amax, mnTab$pXmin, mnTab$pMCalpha+sdTab$pMCalpha)*mnTab$nObsA*int
-  # y2b = dpareto(mnTab$Amax, mnTab$pXmin, mnTab$pMCalpha-sdTab$pMCalpha)*mnTab$nObsA*int
-  # 
-  # polygon(x = c(mnTab$pXmin, mnTab$pXmin, mnTab$Amax, mnTab$Amax),
-  #         y = c(y1a, y1b, y2b, y2a),
-  #         col=rgb(1,0,0,01), border=NA)
-  
-  # add lagend:
+  # add Class B MLE fit:
+  y1 = dpareto(mnTab$pXmin, mnTab$pXmin, mnTab$pMCalpha)*pTotA
+  y2 = dpareto(mnTab$Amax*reducer, mnTab$pXmin, mnTab$pMCalpha)*pTotA
+  segments(mnTab$pXmin, y1, mnTab$Amax*reducer, y2, col=4, lwd=1)
+
+
+  # add legend:
   legend("topright",
          c(paste0(substr(paste0("0", i), nchar(i), nchar(i)+1), ': ', fN[i]),
-           paste0("α = ", round(mnTab$pMCalpha, 2), "±", formatC(round(sdTab$pMCalpha,4), format="g"))),
+           paste0("a = ", round(mnTab$pMCalpha, 2), "±", formatC(round(sdTab$pMCalpha,4), format="g"))),
          xjust=0, text.col=c(1,4), bty="n", cex=1)
 }
 
@@ -1308,11 +1358,171 @@ dev.off()
 cmd = paste('open', pdfOut)
 system(cmd)
 
-# google how to adjust box line width
-# google how to make one line of legend text bold
 
 
 
+##############################################################################
+# Plot Fig. 3D: Pareto extrapolations in Class B basins
+##############################################################################
+
+# set up output pdf:
+pdfOut = paste0(wd, 'output/figs/figS3b_ClassB_extrap.pdf')
+pdf(pdfOut, width=7, height=4.5)
+par(mfrow=c(4,5))
+par(oma=c(3,3.5,0,0.5), mar=c(0,0,0,0))
+
+xlim = range(fOaMeans[1]*reducer, figBreaks)
+ylim = c(1, 1e12)
+
+hTabPath = sub(outPath, paste0(tabDirPath, 'ensembleHistTabs/'), classB_fP)
+ensembleTabPath = sub(outPath, paste0(tabDirPath, 'ensembleOutputTabs/'), classB_fP)
+
+# for each class A basin, plot RSSA histogram:
+for (i in 1:nClassB){
+  # read in table containing stastistical results of each Monte Carlo simulation
+  # run and take mean and stdev of ensembles:
+  ensembleTab = read.csv(ensembleTabPath[i], header=T)
+  mnTab = as.data.frame(t(colMeans(ensembleTab, na.rm=T)))
+  sdTab = as.data.frame(t(apply(ensembleTab, 2, sd)))
+  
+  pTotA = mnTab$nObs*int*reducer
+  
+  # print(i)
+  # print( paste(round(mean(ensembleTab$pMCRSSA_km2),3), round(median(ensembleTab$pMCRSSA_km2),3)))
+  # print( paste(round(mean(ensembleTab$pRSSA_km2),3), round(median(ensembleTab$pRSSA_km2),3)))
+  # print( paste(round(mean(ensembleTab$pRSSA_pcnt),3), round(median(ensembleTab$pRSSA_pcnt),3)))
+  # print( paste(round(mean(ensembleTab$pMCRSSA_pcnt),3), round(median(ensembleTab$pMCRSSA_pcnt),3)))
+  
+  # read in binned histogram data and take mean and stdev of ensembles:
+  dTab = read.csv(hTabPath[i], header=T)
+  dSD = (apply(dTab, 2, sd))
+  dMn = (colMeans(dTab))
+  dMn[dMn < ylim[1] & dMn!=0] = ylim[1]
+  
+  
+  # get histogram breaks:
+  lB = c(figBreaks[-length(figBreaks)])
+  rB = figBreaks[-1]
+  mid = colMeans(rbind(lB, rB))
+  lD = dMn - dSD
+  lD[lD < ylim[1]] = ylim[1]
+  uD = dMn + dSD
+  uD[uD < ylim[1]] = ylim[1]
+  zC = dMn>0 # & lD>0 & uD>0
+  # alternative: instead of mean and std, use 1st, 2nd, & 3rd quartile:
+  # zC = quarts[1,]>0 & quarts[2,]>0 & quarts[3,]>0
+  # arrows(mid[zC], quarts[1,zC], mid[zC], quarts[3,zC],
+  #        code=3, length=0.018, angle=90, lwd=0.5)
+  
+  # plot RSSA histogram:
+  # # quartile histogram:
+  # plotLimInd = which(figBreaks<=xlim[2])
+  # quarts = apply(dTab, 2, quantile, probs=c(0.25, 0.5, 0.75))[,plotLimInd[-length(figBreaks)]]
+  plot(NA, 
+       xlim=xlim, 
+       ylim=ylim,
+       xlab=paste("RSSA (m2)"), 
+       ylab="N measurements",
+       bty='n',
+       type='n', 
+       log='xy',
+       xaxt='n',
+       yaxt='n',
+       las=T); box(lwd=0.5) 
+  if(i %in% c(16:20)){
+    xAxis = c(1e1, 1e3, 1e5)
+    axis(1, at=xAxis, labels=formatC(xAxis, digits=0, format="e"), lwd=0.5)
+  }
+  if(i %in% c(1,6,11,16)){
+    yAxis = c(1e0, 1e6, 1e12)
+    axis(2, at=yAxis, labels=formatC(yAxis, digits=0, format="e"), las=1, lwd=0.5)
+  }
+  # add histogram:
+  polygon(x=rbind(lB[zC], rB[zC], rB[zC], lB[zC], NA),
+          y=rbind(dMn[zC], dMn[zC], 
+                  ylim[1], ylim[1], NA),
+          bty="n", lwd=0.7, border=NA, col=rgb(0.7, 0.7, 0.7, 1))
+  # add standard deviation (1-alpha) bar to each bin:
+  segments(x0=mid[zC], x1=mid[zC], y0=lD[zC], y1=uD[zC], col=1, lwd=0.4)
+  
+  # add Class A extrapolation polygon:
+  y1 = dpareto(fOaMeans[2]*reducer, mnTab$pXmin, gpFit[[2]])*pTotA
+  y2 = dpareto(mnTab$pXmin, mnTab$pXmin, gpFit[[2]])*pTotA
+  polygon(x = c(fOaMeans[2]*reducer, mnTab$pXmin, mnTab$pXmin, fOaMeans[2]*reducer),
+          y = c(y1, y2, ylim[1], ylim[1]),
+          col=rgb(0.85,0.85,0.85,1), border=NA)
+  
+  # add Class A fit uncertainty segments: 
+  y1 = dpareto(fOaMeans[2]*reducer, mnTab$pXmin, gpFit[[2]]+gpFit[[3]])*pTotA
+  y2 = dpareto(fOaMeans[2]*reducer, mnTab$pXmin, gpFit[[2]]-gpFit[[3]])*pTotA
+  y3 = dpareto(mnTab$Amax*reducer, mnTab$pXmin, gpFit[[2]]+gpFit[[3]])*pTotA
+  y4 = dpareto(mnTab$Amax*reducer, mnTab$pXmin, gpFit[[2]]-gpFit[[3]])*pTotA
+  segments(fOaMeans[2]*reducer, y1, mnTab$Amax*reducer, y3, col=1, lwd=1, lty=3)
+  segments(fOaMeans[2]*reducer, y2, mnTab$Amax*reducer, y4, col=1, lwd=1, lty=3)
+  # add Class A mean fit:
+  y1 = dpareto(fOaMeans[2]*reducer, mnTab$pXmin, gpFit[[2]])*pTotA
+  y2 = dpareto(mnTab$Amax*reducer, mnTab$pXmin, gpFit[[2]])*pTotA
+  segments(fOaMeans[2]*reducer, y1, mnTab$Amax*reducer, y2, col=1, lwd=1, lty=1)
+  
+  # add first order width uncertainty segments: 
+  y1 = dpareto(fOaMeans[1]*reducer, mnTab$pXmin, gpFit[[2]])*pTotA
+  y2 = dpareto(fOaMeans[3]*reducer, mnTab$pXmin, gpFit[[2]])*pTotA
+  segments(fOaMeans[1]*reducer, ylim[1], fOaMeans[1]*reducer, y1, col=1, lwd=1, lty=3)
+  segments(fOaMeans[3]*reducer, ylim[1], fOaMeans[3]*reducer, y2, col=1, lwd=1, lty=3)
+  # error arrows at top:
+  y1 = dpareto(fOaMeans[2]*reducer, mnTab$pXmin, gpFit[[2]])*pTotA
+  y2 = dpareto(fOaMeans[3]*reducer, mnTab$pXmin, gpFit[[2]])*pTotA
+  arrows(fOaMeans[2]*reducer, y1, fOaMeans[3]*reducer, y2, 0.05, 90, col=1, lwd=1.2)
+  y1 = dpareto(fOaMeans[2]*reducer, mnTab$pXmin, gpFit[[2]])*pTotA
+  y2 = dpareto(fOaMeans[1]*reducer, mnTab$pXmin, gpFit[[2]])*pTotA
+  arrows(fOaMeans[2]*reducer, y1, fOaMeans[1]*reducer, y2, 0.05, 90, col=1, lwd=1.2)
+  # error arrows at bottom:
+  y2 = dpareto(fOaMeans[2]*reducer, mnTab$pXmin, gpFit[[2]]-gpFit[[3]])*pTotA
+  arrows(fOaMeans[2]*reducer, ylim[1], fOaMeans[1]*reducer, ylim[1], 0.05, 90, col=1, lwd=1.2)
+  y2 = dpareto(fOaMeans[2]*reducer, mnTab$pXmin, gpFit[[2]]+gpFit[[3]])*pTotA
+  arrows(fOaMeans[2]*reducer, ylim[1], fOaMeans[3]*reducer, ylim[1], 0.05, 90, col=1, lwd=1.2)
+  
+  # add labels:
+  text(x=mid[1], 
+       y=exp(mean(log(c(dMn[1], ylim[1])))/2),
+       expression(bold(italic('Observed'))), pos=4, cex=0.7) 
+  text(x=exp(mean(log(c(xlim[1], mnTab$pXmin)))),
+       y=exp(mean(log(c(dMn[1], ylim[1])))/2),
+       expression(bold(italic('Estimated'))), cex=0.7) 
+  
+  #####
+  # add Class B MLE fit:
+  y1 = dpareto(fOaMeans[2]*reducer, mnTab$pXmin, mnTab$pMCalpha)*pTotA
+  y2 = dpareto(mnTab$Amax*reducer, mnTab$pXmin, mnTab$pMCalpha)*pTotA
+  segments(fOaMeans[2]*reducer, y1, mnTab$Amax*reducer, y2, col=4, lwd=0.5)
+  
+  
+  # add legend:
+  legend("topright",
+         c(paste0(substr(paste0("0", i), nchar(i), nchar(i)+1), ': ', fN[i]),
+           paste0("a = ", round(gpFit[[2]], 2), "±", formatC(round(gpFit[[3]],4), format="g"))),
+         xjust=0, text.col=c(1,1), bty="n", cex=1)
+}
+
+dev.off()
+cmd = paste('open', pdfOut)
+system(cmd)
+
+
+
+
+
+##############################################################################
+# Calculate RSSA in Class C hydroBASINs
+##############################################################################
+# Class C basins contain <10,000 GRWL width measurements ≥90 m, tend to be 
+# small and/or dry basins. For these basins, we develop a relationship between 
+# basin percent RSSA (%RSSA), basin area (BA), and aridity index (AI). 
+# We use a least squares multiple linear regression of log-transformed data 
+# weighted by basin area to interpolate RSSA in (Fig. 3E). Larger basins have 
+# a larger percent %RSSA because they contain higher-order rivers. Uncertainty 
+# in these basins is based on the 1σ confidence intervals of the multiple 
+# linear regression. 
 
 
 
@@ -1392,3 +1602,5 @@ io = 0; if (io == 1){
   write.dbf(newhBASIN, hydroBASINpath)
   
 }
+
+
