@@ -21,20 +21,20 @@ if (!"MASS" %in% rownames(installed.packages())){
 
 # specify root paths:
 wd = "/Users/geoallen/Documents/research/2018_01_08_Science_submission_GRWL/git/RSSA/"
-outPath = paste0(wd, 'output/GRWL/GRWL_by_hydroBASIN/')
-pdfOut =  paste0(wd, 'output/figs/figS6_ClassA.pdf')
-tabDirPath = paste0(wd, 'output/tabs/')
-nGRWLperBasinOutPath = paste0(tabDirPath, "nGRWLperBasinTab/nGRWLperBas.csv")
+GRWLpath = paste0(wd, 'input/GRWL/GRWL_by_hydroBASIN/')
 hydroBASINpath = paste0(wd, 'input/basin_shapefiles/hydroBASINs/hybas_allMain.dbf')
 valPath = paste0(wd, 'input/validation/Database_S1_GRWL_validation_data.csv')
-
+tabDirPath = paste0(wd, 'output/tabs/')
+nGRWLperBasinOutPath = paste0(tabDirPath, "nGRWLperBasinTab/nGRWLperBas.csv")
+aridityPath = paste0(wd, 'input/aridity/aridityByBasin.dbf')
+classA_bNamesPath = paste0(wd, 'input/misc/classA_bNames.csv')
 
 # get file paths & codes: 
-fP = list.files(outPath, 'csv', full.names=T)
-fN = list.files(outPath, 'csv')
+fP = list.files(GRWLpath, 'csv', full.names=T)
+fN = list.files(GRWLpath, 'csv')
 fN = sub('.csv', '', fN)
 hBASIN_code = sub("GRWL_", '', fN)
-ensembleTabPath = sub(outPath, paste0(tabDirPath, 'ensembleOutputTabs'), fP)
+ensembleTabPath = sub(GRWLpath, paste0(tabDirPath, 'ensembleOutputTabs'), fP)
 
 # convert area units to reduce the size of numbers 
 # to prevent overflow on MLE statistical tests:
@@ -97,10 +97,14 @@ names(mnTab) = ensembleTabNames
 sdTab = mnTab
 
 # Class A MLE mean fit: 
-gpFit = list(xm=Amin, 
-             alpha=0.90345, # 20 basin with most obs, min elev = 0
-             stdev=0.06285026) # 20 basins with most obs, min elev = 0
-
+# gpFit = list(xm=Amin, 
+#              alpha=0.90345, # 20 basin with most obs, min elev = 0
+#              stdev=0.06285026) # 20 basins with most obs, min elev = 0
+gpFit = list(
+  xm = 3259.274, #mnTab$pXmin,
+  alpha = 1.019686, #mnTab$pMCalpha,
+  stdev = 0.1213816 #sdTab$pMCalpha
+)
 
 
 # total surface area of Earth's non glaciated land surface:
@@ -307,175 +311,6 @@ RSSAextrapolater <- function(pFit, fOaMean, fOaSD, Amin, Amax, N, sumA){
 }
 
 
-# plot histogram and fit for each basin (Fig 2b):
-histPlot = function(fOaMeans, Amax, pFit, gpFit, sumA, 
-                    figBreaks, h, Alen, int, pRSSAextrap, gpRSSAextrap, 
-                    obs_prcnt, pRSSA_prcnt, gpRSSA_prcnt, pGOF, m){
-  
-  # calculate total area of the bins: 
-  pTotA = Alen*int
-
-  # get pFit formated for the plotter (script could be improved):
-  if (is.na(pFit$stdev)){ pFit$stdev = 0 }
-  pFit$alpha = c(pFit$alpha-pFit$stdev, pFit$alpha, pFit$alpha+pFit$stdev)
-  
-  if (is.na(gpFit$stdev)){ gpFit$stdev = 0 }
-  gpFit$alpha = c(gpFit$alpha-gpFit$stdev, gpFit$alpha, gpFit$alpha+gpFit$stdev)  
-  
-  # skip the first plot
-  #if (m == 1){plot.new()}
-  
-  # plot empirical frequency histogram:
-  xlim = c(Amin, 10725)
-  ylim = c(1, 2e6)
-  
-  title = paste0('Basin #: ',fN[i])
-  plot(NA, 
-       xlim=xlim, 
-       ylim=ylim,
-       xlab=paste("Area (m2)"), 
-       ylab="N measurements",
-       #main=title,
-       type='n', 
-       log='xy',
-       xaxt='n',
-       yaxt='n')
-  if(m %in% c(16:20)){
-  xAxis = axis(1, labels=F)
-  axis(1, at=xAxis, labels=xAxis*reducer)
-  }
-  if(m %in% c(1,6,11,16)){
-    yAxis = axis(2, labels=F)
-    axis(2, at=yAxis, labels=yAxis)
-  }
-  mtext(paste(title), line = -1, cex=0.75)
-  rect(figBreaks[-length(figBreaks)], 1, 
-       figBreaks[-1], h, 
-       border=NA, col="gray")
-  
- 
-  
-  # basin-fit pareto curve:
-  io=0; if(io==1){
-  # 1st order width uncertainty:
-  x1 = fOaMeans[1]
-  x2 = fOaMeans[3]
-  y1 = dpareto(fOaMeans[1], pFit[[1]], pFit[[2]][2])*pTotA
-  y2 = dpareto(fOaMeans[3], pFit[[1]], pFit[[2]][2])*pTotA
-  polygon(x = c(x1, x1, x2, x2),
-          y = c(1, y1, y2, 1),
-          col=rgb(1,0,0,0.2), border=NA)
-  
-  # Pareto MLE fit uncertainty: 
-  y1 = dpareto(fOaMeans[2], pFit[[1]], pFit[[2]][1])*pTotA
-  y2 = dpareto(Amax, pFit[[1]], pFit[[2]][1])*pTotA
-  y3 = dpareto(Amax, pFit[[1]], pFit[[2]][3])*pTotA
-  y4 = dpareto(fOaMeans[2], pFit[[1]], pFit[[2]][3])*pTotA
-  polygon(x = c(fOaMeans[2], Amax, Amax, fOaMeans[2]),
-          y = c(y1, y2, y3, y4),
-          col=rgb(1,0,0,0.2), border=NA)
-  
-  # estimated area polygon:
-  y1 = dpareto(fOaMeans[2], pFit[[1]], pFit[[2]][2])*pTotA
-  y2 = dpareto(Amin, pFit[[1]], pFit[[2]][2])*pTotA
-  polygon(x = c(fOaMeans[2], Amin, Amin, fOaMeans[2]),
-          y = c(y1, y2, 1, 1),
-          col=rgb(1,0.2,0,0.1), border=NA)
-  }
-  # Pareto fit over observed data:
-  y1 = dpareto(Amin, pFit[[1]], pFit[[2]][2])*pTotA
-  y2 = dpareto(Amax, pFit[[1]], pFit[[2]][2])*pTotA
-  segments(Amin, y1, Amax, y2, col=4, lwd=1.2)
-  
-  io=0;if (io==1){
-  # extrapolated Pareto fit:
-  y1 = dpareto(fOaMeans[2], pFit[[1]], pFit[[2]][2])*pTotA
-  y2 = dpareto(Amin, pFit[[1]], pFit[[2]][2])*pTotA
-  segments(fOaMean, y1, Amin, y2, col=2, lwd=1.2, lty=2)
-  
-  # first order uncertainty bars:
-  y1 = dpareto(fOaMeans[2], pFit[[1]], pFit[[2]][2])*pTotA
-  y2 = dpareto(fOaMeans[3], pFit[[1]], pFit[[2]][2])*pTotA
-  arrows(fOaMeans[2], y1, fOaMeans[3], y2, 0.05, 90, col=2, lwd=1.2)
-  y1 = dpareto(fOaMeans[2], pFit[[1]], pFit[[2]][2])*pTotA
-  y2 = dpareto(fOaMeans[1], pFit[[1]], pFit[[2]][2])*pTotA
-  arrows(fOaMeans[2], y1, fOaMeans[1], y2, 0.05, 90, col=2, lwd=1.2)
-  
-  y2 = dpareto(fOaMeans[2], pFit[[1]], pFit[[2]][1])*pTotA
-  arrows(fOaMeans[2], 1, fOaMeans[1], 1, 0.05, 90, col=2, lwd=1.2)
-  y2 = dpareto(fOaMeans[2], pFit[[1]], pFit[[2]][3])*pTotA
-  arrows(fOaMeans[2], 1, fOaMeans[3], 1, 0.05, 90, col=2, lwd=1.2)
-  
-  
-  # global-fit pareto curve:
-  
-  # 1st order width uncertainty:
-  x1 = fOaMeans[1]
-  x2 = fOaMeans[3]
-  y1 = dpareto(fOaMeans[1], gpFit[[1]], gpFit[[2]][2])*pTotA
-  y2 = dpareto(fOaMeans[3], gpFit[[1]], gpFit[[2]][2])*pTotA
-  polygon(x = c(x1, x1, x2, x2),
-          y = c(1, y1, y2, 1),
-          col=rgb(0,0,1,0.2), border=NA)
-  
-  # Pareto MLE fit uncertainty: 
-  y1 = dpareto(fOaMeans[2], gpFit[[1]], gpFit[[2]][1])*pTotA
-  y2 = dpareto(Amax, gpFit[[1]], gpFit[[2]][1])*pTotA
-  y3 = dpareto(Amax, gpFit[[1]], gpFit[[2]][3])*pTotA
-  y4 = dpareto(fOaMeans[2], gpFit[[1]], gpFit[[2]][3])*pTotA
-  polygon(x = c(fOaMeans[2], Amax, Amax, fOaMeans[2]),
-          y = c(y1, y2, y3, y4),
-          col=rgb(0,0,1,0.2), border=NA)
-  
-  # estimated area polygon:
-  y1 = dpareto(fOaMeans[2], gpFit[[1]], gpFit[[2]][2])*pTotA
-  y2 = dpareto(Amin, gpFit[[1]], gpFit[[2]][2])*pTotA
-  polygon(x = c(fOaMeans[2], Amin, Amin, fOaMeans[2]),
-          y = c(y1, y2, 1, 1),
-          col=rgb(0,0.2,1,0.1), border=NA)
-  
-  # Pareto fit over observed data:
-  y1 = dpareto(Amin, gpFit[[1]], gpFit[[2]][2])*pTotA
-  y2 = dpareto(Amax, gpFit[[1]], gpFit[[2]][2])*pTotA
-  segments(Amin, y1, Amax, y2, col=4, lwd=1.2)
-  
-  # extrapolated Pareto fit:
-  y1 = dpareto(fOaMeans[2], gpFit[[1]], gpFit[[2]][2])*pTotA
-  y2 = dpareto(Amin, gpFit[[1]], gpFit[[2]][2])*pTotA
-  segments(fOaMean, y1, Amin, y2, col=4, lwd=1.2, lty=2)
-  
-  # first order uncertainty bars:
-  y1 = dpareto(fOaMeans[2], gpFit[[1]], gpFit[[2]][2])*pTotA
-  y2 = dpareto(fOaMeans[3], gpFit[[1]], gpFit[[2]][2])*pTotA
-  arrows(fOaMeans[2], y1, fOaMeans[3], y2, 0.05, 90, col=4, lwd=1.2)
-  y1 = dpareto(fOaMeans[2], gpFit[[1]], gpFit[[2]][2])*pTotA
-  y2 = dpareto(fOaMeans[1], gpFit[[1]], gpFit[[2]][2])*pTotA
-  arrows(fOaMeans[2], y1, fOaMeans[1], y2, 0.05, 90, col=4, lwd=1.2)
-  
-  y2 = dpareto(fOaMeans[2], gpFit[[1]], gpFit[[2]][1])*pTotA
-  arrows(fOaMeans[2], 1, fOaMeans[1], 1, 0.05, 90, col=4, lwd=1.2)
-  y2 = dpareto(fOaMeans[2], gpFit[[1]], gpFit[[2]][3])*pTotA
-  arrows(fOaMeans[2], 1, fOaMeans[3], 1, 0.05, 90, col=4, lwd=1.2)
-  }
-  
-  
-  # add pareto statistics:
-  io=1;if (io==1){
-  legend("topright", #c(paste0("global fit: \n",
-    #" SA: ", round(gpRSSAextrap$meanRSSA, 1), " +|- ", round(gpRSSAextrap$MCRSSA,1), " km2\n", 
-    #" %SA: ", round(gpRSSA_prcnt, 2), " +|- ", round(gpRSSA_MC_prct, 2),"%\n", 
-    #" alpha: ", round(gpFit$alpha[2], 3), " +|- ", round(gpFit$stdev, 3), "\n"),
-    paste0("basin fit: \n",
-    #" SA: ", round(pRSSAextrap$meanRSSA, 1), " +|- ", round(pRSSAextrap$MCRSSA,1), " km2\n", 
-    #" %SA: ", round(pRSSA_prcnt, 2), " +|- ", round(pRSSA_MC_prct, 2),"%\n",
-    " alpha: ", round(pFit$alpha[2], 3), " +|- ", round(pFit$stdev, 3), "\n",  
-    " K-S D: ", round(pGOF$KS_D, 2), "    p: ", round(pGOF$KS_p, 3)),
-    xjust=0, text.col=c(4,2), bty="n", cex=0.7)
-  }
-  
-}
-
-
 # round columns of mnTab:
 tabRounder <- function(tab){
   
@@ -552,7 +387,6 @@ print(paste0("GRWL error Monte Carlo  mean = ", round(nfit[1]),
              ",  StDev = ", round(nfit[2])))
 
 
-
 ##############################################################################
 # Calculate RSSA in Class A hydroBASINs
 ##############################################################################
@@ -576,7 +410,7 @@ if (!file.exists(nGRWLperBasinOutPath)){
 }
 # read in sorted table of N GRWL obs in each hBasin: 
 nGRWLperBasTab = read.csv(nGRWLperBasinOutPath, header=T)
-nGRWLperBasTab$fP = paste0(wd, "output/GRWL/GRWL_by_hydroBASIN/", nGRWLperBasTab$fN, ".csv")
+nGRWLperBasTab$fP = paste0(wd, "input/GRWL/GRWL_by_hydroBASIN/", nGRWLperBasTab$fN, ".csv")
 
 
 # Class A basins contain >250,000 river measurements:
@@ -585,14 +419,15 @@ classA_fP = as.character(nGRWLperBasTab$fP[nGRWLperBasTab$nGRWLperBas>250000])
 classA_fN = nGRWLperBasTab$fN[nGRWLperBasTab$nGRWLperBas>250000]
 mnTabP = paste0(wd, 'output/figs/figS6_SAfits_classA_MCmn.csv')
 sdTabP = paste0(wd, 'output/figs/figS6_SAfits_classA_MCsd.csv')
-hTabPath = sub(outPath, paste0(tabDirPath, 'ensembleHistTabs/'), classA_fP)
-ensembleTabPath = sub(outPath, paste0(tabDirPath, 'ensembleOutputTabs/'), classA_fP)
+hTabPath = sub(GRWLpath, paste0(tabDirPath, 'ensembleHistTabs/'), classA_fP)
+ensembleTabPath = sub(GRWLpath, paste0(tabDirPath, 'ensembleOutputTabs/'), classA_fP)
 
 nClassA = length(classA_fP)
 print(paste("Class A Basins:", paste(classA_fN, collapse=" ")))
 
+
 # get basin area in km2:
-basinArea = hBASIN$area_km2[match(classA_fN, hBASIN$MAIN_BAS)] #132773914
+basinArea = hBASIN$area_km2[match(classA_fN, hBASIN$MAIN_BAS)] 
 
 # get start time:
 old <- Sys.time() 
@@ -667,6 +502,8 @@ for (i in 1:nClassA){
     # global 
     gpRSSAextrap = RSSAextrapolater(gpFit, fOaMean, fOaSD, Amin, Amax, N=1, sumA)
     
+print(pRSSAextrap$MCAlpha)
+    
     # calculate the % of land surface occupied by rivers and streams: 
     obs_prcnt = 100*sumA*reducer*1e-6/basinArea[i]
     pRSSA_prcnt = 100*pRSSAextrap$meanRSSA/basinArea[i]
@@ -677,7 +514,7 @@ for (i in 1:nClassA){
     # fill in table with outputs of ensemble run: ####
     ensembleTab[j,] =
       as.vector(c(
-        fN[i], 
+        classA_fN[i], 
         basinArea[i],
         length(which(keep)), 
         bClass,
@@ -762,20 +599,36 @@ print(100*RSSA_km2/sum(mnTab$basinA_km2))
 # Plot Fig. S6: Pareto fits in each Class A basin
 ##############################################################################
 
-# set up output pdf:
-pdfOut = paste0(wd, 'output/figs/figS6_ClassA_fits.pdf')
-pdf(pdfOut, width=7, height=4.5)
-par(mfrow=c(4,5))
-par(oma=c(3,3.5,0,0.5), mar=c(0,0,0,0))
+# read in sorted table of N GRWL obs in each hBasin: 
+nGRWLperBasTab = read.csv(nGRWLperBasinOutPath, header=T)
+nGRWLperBasTab$fP = paste0(wd, "input/GRWL/GRWL_by_hydroBASIN/", nGRWLperBasTab$fN, ".csv")
+classA_fP = as.character(nGRWLperBasTab$fP[nGRWLperBasTab$nGRWLperBas>250000])
+classA_fN = nGRWLperBasTab$fN[nGRWLperBasTab$nGRWLperBas>250000]
 
+# get paths of ensemble tables: 
+hTabPath = sub(GRWLpath, paste0(tabDirPath, 'ensembleHistTabs/'), classA_fP)
+ensembleTabPath = sub(GRWLpath, paste0(tabDirPath, 'ensembleOutputTabs/'), classA_fP)
+
+# read in table with Class A names:
+classA_bNames = read.csv(classA_bNamesPath, header=T)
+basinOrder = match(classA_bNames$bID, classA_fN)
+
+# define plotting bounds:
 xlim = range(figBreaks)
 ylim = c(1, 3e6)
 
-hTabPath = sub(outPath, paste0(tabDirPath, 'ensembleHistTabs/'), classA_fP)
-ensembleTabPath = sub(outPath, paste0(tabDirPath, 'ensembleOutputTabs/'), classA_fP)
+# set up output pdf:
+pdfOut = paste0(wd, 'output/figs/figS6_ClassA_fits.pdf')
+pdf(pdfOut, width=6, height=4)
+par(mfrow=c(4,5))
+par(oma=c(3,3.5,0,0.5), mar=c(0,0,0,0))
 
 # for each class A basin, plot RSSA histogram:
-for (i in 1:nClassA){
+for (h in 1:nClassA){
+  
+  # plot in order of map in Fig. S6:
+  i = basinOrder[h]
+  
   # read in table containing stastistical results of each Monte Carlo simulation
   # run and take mean and stdev of ensembles:
   ensembleTab = read.csv(ensembleTabPath[i], header=T)
@@ -784,17 +637,11 @@ for (i in 1:nClassA){
   
   pTotA = mnTab$nObs*int*reducer
   
-  # print(i)
-  # print( paste(round(mean(ensembleTab$pMCRSSA_km2),3), round(median(ensembleTab$pMCRSSA_km2),3)))
-  # print( paste(round(mean(ensembleTab$pRSSA_km2),3), round(median(ensembleTab$pRSSA_km2),3)))
-  print( paste(round(mean(ensembleTab$pRSSA_pcnt),3), round(median(ensembleTab$pRSSA_pcnt),3)))
-  print( paste(round(mean(ensembleTab$pMCRSSA_pcnt),3), round(median(ensembleTab$pMCRSSA_pcnt),3)))
-  
   # read in binned histogram data and take mean and stdev of ensembles:
   dTab = read.csv(hTabPath[i], header=T)
-  dMn = (colMeans(dTab))
-  dMn[dMn < ylim[1]] = ylim[1]
   dSD = (apply(dTab, 2, sd))
+  dMn = (colMeans(dTab))
+  dMn[dMn < ylim[1] & dMn!=0] = ylim[1]
   
   # get histogram breaks:
   lB = c(figBreaks[-length(figBreaks)])
@@ -805,20 +652,12 @@ for (i in 1:nClassA){
   uD = dMn + dSD
   uD[uD < ylim[1]] = ylim[1]
   zC = dMn>0 # & lD>0 & uD>0
-  # alternative: instead of mean and std, use 1st, 2nd, & 3rd quartile:
-  # zC = quarts[1,]>0 & quarts[2,]>0 & quarts[3,]>0
-  # arrows(mid[zC], quarts[1,zC], mid[zC], quarts[3,zC],
-  #        code=3, length=0.018, angle=90, lwd=0.5)
-  
-  # plot RSSA histogram:
-  # # quartile histogram:
-  # plotLimInd = which(figBreaks<=xlim[2])
-  # quarts = apply(dTab, 2, quantile, probs=c(0.25, 0.5, 0.75))[,plotLimInd[-length(figBreaks)]]
+
   plot(NA, 
        xlim=xlim, 
        ylim=ylim,
-       xlab=paste("Area (m2)"), 
-       ylab="N measurements",
+       xlab="", 
+       ylab="",
        bty='n',
        type='n', 
        log='xy',
@@ -826,13 +665,15 @@ for (i in 1:nClassA){
        yaxt='n',
        las=T)
   box(lwd=0.5) 
-  if(i %in% c(16:20)){
+  if(h %in% c(16:20)){
     xAxis = c(1e4, 1e5, 1e6)
-    axis(1, at=xAxis, labels=formatC(xAxis, digits=0, format="e"), lwd=0.5)
+    axis(1, at=xAxis, labels=formatC(xAxis, digits=0, format="e"), 
+         tcl=-0.5, lwd=0.5, cex.axis=0.7)
   }
-  if(i %in% c(1,6,11,16)){
+  if(h %in% c(1,6,11,16)){
     yAxis = c(1e0, 1e2, 1e4, 1e6)
-    axis(2, at=yAxis, labels=formatC(yAxis, digits=0, format="e"), las=1, lwd=0.5)
+    axis(2, at=yAxis, labels=formatC(yAxis, digits=0, format="e"), 
+         tcl=-0.5, las=1, lwd=0.5, cex.axis=0.7)
   }
   
   polygon(x=rbind(lB[zC], rB[zC], rB[zC], lB[zC], NA),
@@ -851,21 +692,11 @@ for (i in 1:nClassA){
   y2 = dpareto(mnTab$Amax*reducer, mnTab$pXmin, mnTab$pMCalpha)*pTotA
   segments(mnTab$pXmin, y1, mnTab$Amax*reducer, y2, col=4, lwd=1)
   
-  # # add alpha uncertainty bars (too small to be seen):
-  # y1a = dpareto(mnTab$pXmin, mnTab$pXmin, mnTab$pMCalpha+sdTab$pMCalpha)*pTotA
-  # y1b = dpareto(mnTab$pXmin, mnTab$pXmin, mnTab$pMCalpha-sdTab$pMCalpha)*pTotA
-  # y2a = dpareto(mnTab$Amax, mnTab$pXmin, mnTab$pMCalpha+sdTab$pMCalpha)*pTotA
-  # y2b = dpareto(mnTab$Amax, mnTab$pXmin, mnTab$pMCalpha-sdTab$pMCalpha)*pTotA
-  # 
-  # polygon(x = c(mnTab$pXmin, mnTab$pXmin, mnTab$Amax, mnTab$Amax),
-  #         y = c(y1a, y1b, y2b, y2a),
-  #         col=rgb(1,0,0,01), border=NA)
-
   # add legend:
   legend("topright",
-         c(paste0(substr(paste0("0", i), nchar(i), nchar(i)+1), ': ', fN[i]),
+         c(paste0(substr(paste0("0", h), nchar(h), nchar(h)+1), ': ', classA_bNames$bName[h]),
            paste0("a = ", round(mnTab$pMCalpha, 2), "±", formatC(round(sdTab$pMCalpha,4), format="g"))),
-         xjust=0, text.col=c(1,4), bty="n", cex=1)
+           xjust=0, text.col=c(1,4), bty="n", cex=0.7)
 }
 
 dev.off()
@@ -877,20 +708,26 @@ system(cmd)
 # Plot Fig. 3C: Pareto extrapolations in Class A basins
 ##############################################################################
 
-# set up output pdf:
-pdfOut = paste0(wd, 'output/figs/figS3b_ClassA_extrap.pdf')
-pdf(pdfOut, width=7, height=4.5)
-par(mfrow=c(4,5))
-par(oma=c(3,3.5,0,0.5), mar=c(0,0,0,0))
+# read in ensemble plots:
+hTabPath = sub(GRWLpath, paste0(tabDirPath, 'ensembleHistTabs/'), classA_fP)
+ensembleTabPath = sub(GRWLpath, paste0(tabDirPath, 'ensembleOutputTabs/'), classA_fP)
 
+# define plotting bounds:
 xlim = c(fOaMeans[1]*reducer, max(figBreaks))
 ylim = c(1, 1e12)
 
-hTabPath = sub(outPath, paste0(tabDirPath, 'ensembleHistTabs/'), classA_fP)
-ensembleTabPath = sub(outPath, paste0(tabDirPath, 'ensembleOutputTabs/'), classA_fP)
+# set up output pdf:
+pdfOut = paste0(wd, 'output/figs/figS3b_ClassA_extraps.pdf')
+pdf(pdfOut, width=6, height=4)
+par(mfrow=c(4,5))
+par(oma=c(3,3.5,0,0.5), mar=c(0,0,0,0))
 
 # for each class A basin, plot RSSA histogram:
-for (i in 1:nClassA){
+for (h in 1:nClassA){
+  
+  # plot in order of map in Fig. S6:
+  i = basinOrder[h]
+  
   # read in table containing stastistical results of each Monte Carlo simulation
   # run and take mean and stdev of ensembles:
   ensembleTab = read.csv(ensembleTabPath[i], header=T)
@@ -927,21 +764,23 @@ for (i in 1:nClassA){
   plot(NA, 
        xlim=xlim, 
        ylim=ylim,
-       xlab=paste("RSSA (m2)"), 
-       ylab="N measurements",
+       xlab="", 
+       ylab="",
        bty='n',
        type='n', 
        log='xy',
        xaxt='n',
        yaxt='n',
        las=T); box(lwd=0.5) 
-  if(i %in% c(16:20)){
+  if(h %in% c(16:20)){
     xAxis = c(1e1, 1e3, 1e5)
-    axis(1, at=xAxis, labels=formatC(xAxis, digits=0, format="e"), lwd=0.5)
+    axis(1, at=xAxis, labels=formatC(xAxis, digits=0, format="e"), 
+         tcl=-0.5, las=1, lwd=0.5, cex.axis=0.7)
   }
-  if(i %in% c(1,6,11,16)){
+  if(h %in% c(1,6,11,16)){
     yAxis = c(1e0, 1e6, 1e12)
-    axis(2, at=yAxis, labels=formatC(yAxis, digits=0, format="e"), las=1, lwd=0.5)
+    axis(2, at=yAxis, labels=formatC(yAxis, digits=0, format="e"), 
+         tcl=-0.5, las=1, lwd=0.5, cex.axis=0.7)
   }
   # add histogram & std (1 sigma) segments to each bin:
   polygon(x=rbind(lB[zC], rB[zC], rB[zC], lB[zC], NA),
@@ -983,21 +822,17 @@ for (i in 1:nClassA){
   # add labels:
   text(x=mid[1], 
        y=exp(mean(log(c(dMn[1], ylim[1])))/2),
-       expression(bold(italic('Observed'))), pos=4, cex=0.7) 
+       expression(bold(italic('Observed'))), pos=4, cex=0.6) 
   text(x=exp(mean(log(c(xlim[1], mnTab$pXmin)))),
        y=exp(mean(log(c(dMn[1], ylim[1])))/2),
-       expression(bold(italic('Estimated'))), cex=0.7) 
-  
-  #####
-  # add Class B MLE fit:
-
-  
+       expression(bold(italic('Estimated'))), cex=0.6) 
   
   # add legend:
   legend("topright",
-         c(paste0(substr(paste0("0", i), nchar(i), nchar(i)+1), ': ', fN[i]),
+         c(paste0(substr(paste0("0", h), nchar(h), nchar(h)+1), ': ', classA_bNames$bName[h]),
+           paste0("%SA: ", round(mnTab$pMCRSSA_pcnt, 2), "±", round(sdTab$pMCRSSA_pcnt, 2),"%"),
            paste0("a = ", round(mnTab$pMCalpha, 2), "±", formatC(round(sdTab$pMCalpha,4), format="g"))),
-         xjust=0, text.col=c(1,4), bty="n", cex=1)
+         xjust=0, text.col=c(1,1,4), bty="n", cex=0.7)
 }
 
 dev.off()
@@ -1022,13 +857,9 @@ system(cmd)
 # read in hBASIN shapefile dbf:
 hBASIN = foreign::read.dbf(sub('hybas_allMain', 'hybas_allMainCopy', hydroBASINpath))
 
-# if list file does not exist, create a list N GRWL obs. in each hBasin: 
-if (!file.exists(nGRWLperBasinOutPath)){
-  nGRWLperBasListGenerator(fP, tabDirPath, nGRWLperBasinOutPath)
-}
 # read in sorted table of N GRWL obs in each hBasin: 
 nGRWLperBasTab = read.csv(nGRWLperBasinOutPath, header=T)
-nGRWLperBasTab$fP = paste0(wd, "output/GRWL/GRWL_by_hydroBASIN/", nGRWLperBasTab$fN, ".csv")
+nGRWLperBasTab$fP = paste0(wd, "input/GRWL/GRWL_by_hydroBASIN/", nGRWLperBasTab$fN, ".csv")
 
 
 # Class B basins contain between 10k and 250k river measurements:
@@ -1038,8 +869,8 @@ classB_fP = as.character(nGRWLperBasTab$fP[classBboo])
 classB_fN = nGRWLperBasTab$fN[classBboo]
 mnTabP = paste0(wd, 'output/figs/figSX_SAfits_classB_MCmn.csv')
 sdTabP = paste0(wd, 'output/figs/figSX_SAfits_classB_MCsd.csv')
-hTabPath = sub(outPath, paste0(tabDirPath, 'ensembleHistTabs/'), classB_fP)
-ensembleTabPath = sub(outPath, paste0(tabDirPath, 'ensembleOutputTabs/'), classB_fP)
+hTabPath = sub(GRWLpath, paste0(tabDirPath, 'ensembleHistTabs/'), classB_fP)
+ensembleTabPath = sub(GRWLpath, paste0(tabDirPath, 'ensembleOutputTabs/'), classB_fP)
 nClassB = length(classB_fP)
 print(paste("Class B Basins:", paste(classB_fN, collapse=" ")))
 
@@ -1047,8 +878,8 @@ print(paste("Class B Basins:", paste(classB_fN, collapse=" ")))
 basinArea = hBASIN$area_km2[match(classB_fN, hBASIN$MAIN_BAS)] #132773914
 
 # if needed, calculate mean & stdev fits for Class A basins:
-# Class A basins contain >250,000 river measurements:
 io=0;if(io==1){
+  # Class A basins contain >250,000 measurements of rivers wider than 90m:
   classA_fP = as.character(nGRWLperBasTab$fP[nGRWLperBasTab$nGRWLperBas>250000])
   classA_fN = nGRWLperBasTab$fN[nGRWLperBasTab$nGRWLperBas>250000]
   
@@ -1061,24 +892,22 @@ io=0;if(io==1){
       classAensembleTab = rbind(classAensembleTab, read.csv(ensembleTabPath[i], header=T))
     }
   }
+  
   mnTab = as.data.frame(t(colMeans(classAensembleTab, na.rm=T)))
   sdTab = as.data.frame(t(apply(classAensembleTab, 2, sd)))
+
+  # create list of statistical parameters derived from class A basins:
+  gpFit = list(
+    xm = 3259.274, #mnTab$pXmin,
+    alpha = 1.019686, #mnTab$pMCalpha,
+    stdev = 0.1213816 #sdTab$pMCalpha
+  )
 }
 
-# create list of statistical parameters derived from class A basins:
-gpFit = list(
-  xm = 32.59215, #mnTab$pXmin/reducer,
-  alpha = 0.95, #mnTab$pMCalpha,
-  stdev = 0.06185113 #sdTab$pMCalpha
-)
+
 
 # get start time:
 old <- Sys.time() 
-
-# set up output pdf:
-# pdf(pdfOut, width=15, height=9)
-# par(mfrow=c(4,5))
-# par(oma=c(3,3,0,0), mar=c(0,0,0,0))
 
 # calculate RSSA in each basin:
 for (i in 1:nClassB){
@@ -1141,7 +970,7 @@ for (i in 1:nClassB){
     hTab[j,1:length(h$counts)] = h$counts
     
     
-    # RSSA estimate with uncertainty: ####
+    # RSSA estimate with uncertainty:
     
     # calculate total surface area of rivers and streams by extending 
     # RSSA abundance to smaller rivers, and calc confidence intervals
@@ -1160,7 +989,7 @@ for (i in 1:nClassB){
     # fill in table with outputs of ensemble run: ####
     ensembleTab[j,] =
       as.vector(c(
-        fN[i], 
+        classB_fN[i], 
         basinArea[i],
         length(which(keep)), 
         bClass,
@@ -1209,22 +1038,14 @@ for (i in 1:nClassB){
 
 }
 
-
-
-# round columns of mnTab:
-mnTabRound = tabRounder(mnTab)
-sdTabRound = tabRounder(sdTab)
-
-# write out mean and stdev output tables:
-write.csv(mnTabRound, mnTabP, row.names=F)
-write.csv(sdTabRound, sdTabP, row.names=F)
-
-# dev.off()
-# cmd = paste('open', pdfOut)
-# system(cmd)
-
 new = Sys.time() - old
 print(new) 
+
+# round columns and write out mean and stdev output tables: 
+mnTabRound = tabRounder(mnTab)
+sdTabRound = tabRounder(sdTab)
+write.csv(mnTabRound, mnTabP, row.names=F)
+write.csv(sdTabRound, sdTabP, row.names=F)
 
 # add up the total observed & extrapolated river surface area in Class A basins:
 classB_obs_gt90m = sum(mnTab$obSA_gt90m_km2)
@@ -1236,15 +1057,13 @@ print(paste("Class B basins observed %RSSA all widths:", round(100*classB_obs/cl
 print(paste("Class B basins extrapolated %RSSA:", round(100*classB_RSSA/classB_BasinA,2), "%"))
 
 # add uncertainty:
-RSSA_km2 = round(c(sum(as.numeric(mnTab$pRSSA_km2)), 
-                   + sum(as.numeric(sdTab$pRSSA_km2)), 
+RSSA_km2 = round(c(sum(as.numeric(mnTab$pRSSA_km2)),
+                   + sum(as.numeric(sdTab$pRSSA_km2)),
                    sum(as.numeric(sdTab$pRSSA_km2))))
-
 
 print("extrapolated Class B RSSA:")
 print(RSSA_km2)
 print(100*RSSA_km2/sum(mnTab$basinA_km2))
-
 
 
 
@@ -1254,15 +1073,15 @@ print(100*RSSA_km2/sum(mnTab$basinA_km2))
 
 # set up output pdf:
 pdfOut = paste0(wd, 'output/figs/figSX_ClassB_fits.pdf')
-pdf(pdfOut, width=7, height=4.5)
+pdf(pdfOut, width=6, height=4)
 par(mfrow=c(4,5))
 par(oma=c(3,3.5,0,0.5), mar=c(0,0,0,0))
 
 xlim = range(figBreaks)
 ylim = c(1, 3e6)
 
-hTabPath = sub(outPath, paste0(tabDirPath, 'ensembleHistTabs/'), classB_fP)
-ensembleTabPath = sub(outPath, paste0(tabDirPath, 'ensembleOutputTabs/'), classB_fP)
+hTabPath = sub(GRWLpath, paste0(tabDirPath, 'ensembleHistTabs/'), classB_fP)
+ensembleTabPath = sub(GRWLpath, paste0(tabDirPath, 'ensembleOutputTabs/'), classB_fP)
 
 mnTab = read.csv(mnTabP, header=T)
 sdTab = read.csv(sdTabP, header=T)
@@ -1310,8 +1129,8 @@ for (i in 1:nClassB){
   plot(NA, 
        xlim=xlim, 
        ylim=ylim,
-       xlab=paste("Area (m2)"), 
-       ylab="N measurements",
+       xlab="", 
+       ylab="",
        bty='n',
        type='n', 
        log='xy',
@@ -1321,11 +1140,13 @@ for (i in 1:nClassB){
   box(lwd=0.5) 
   if(i %in% c(16:20)){
     xAxis = c(1e4, 1e5, 1e6)
-    axis(1, at=xAxis, labels=formatC(xAxis, digits=0, format="e"), lwd=0.5)
+    axis(1, at=xAxis, labels=formatC(xAxis, digits=0, format="e"), 
+         tcl=-0.5, lwd=0.5, cex.axis=0.7)
   }
   if(i %in% c(1,6,11,16)){
     yAxis = c(1e0, 1e2, 1e4, 1e6)
-    axis(2, at=yAxis, labels=formatC(yAxis, digits=0, format="e"), las=1, lwd=0.5)
+    axis(2, at=yAxis, labels=formatC(yAxis, digits=0, format="e"), 
+         tcl=-0.5, lwd=0.5, cex.axis=0.7)
   }
   
   polygon(x=rbind(lB[zC], rB[zC], rB[zC], lB[zC], NA),
@@ -1349,9 +1170,9 @@ for (i in 1:nClassB){
 
   # add legend:
   legend("topright",
-         c(paste0(substr(paste0("0", i), nchar(i), nchar(i)+1), ': ', fN[i]),
+         c(paste0(substr(paste0("0", i), nchar(i), nchar(i)+1), ': ', classB_fN[i]),
            paste0("a = ", round(mnTab$pMCalpha, 2), "±", formatC(round(sdTab$pMCalpha,4), format="g"))),
-         xjust=0, text.col=c(1,4), bty="n", cex=1)
+         xjust=0, text.col=c(1,4), bty="n", cex=0.7)
 }
 
 dev.off()
@@ -1366,16 +1187,16 @@ system(cmd)
 ##############################################################################
 
 # set up output pdf:
-pdfOut = paste0(wd, 'output/figs/figS3b_ClassB_extrap.pdf')
-pdf(pdfOut, width=7, height=4.5)
+pdfOut = paste0(wd, 'output/figs/figS3b_ClassB_extraps.pdf')
+pdf(pdfOut, width=6, height=4)
 par(mfrow=c(4,5))
 par(oma=c(3,3.5,0,0.5), mar=c(0,0,0,0))
 
 xlim = range(fOaMeans[1]*reducer, figBreaks)
 ylim = c(1, 1e12)
 
-hTabPath = sub(outPath, paste0(tabDirPath, 'ensembleHistTabs/'), classB_fP)
-ensembleTabPath = sub(outPath, paste0(tabDirPath, 'ensembleOutputTabs/'), classB_fP)
+hTabPath = sub(GRWLpath, paste0(tabDirPath, 'ensembleHistTabs/'), classB_fP)
+ensembleTabPath = sub(GRWLpath, paste0(tabDirPath, 'ensembleOutputTabs/'), classB_fP)
 
 # for each class A basin, plot RSSA histogram:
 for (i in 1:nClassB){
@@ -1386,12 +1207,6 @@ for (i in 1:nClassB){
   sdTab = as.data.frame(t(apply(ensembleTab, 2, sd)))
   
   pTotA = mnTab$nObs*int*reducer
-  
-  # print(i)
-  # print( paste(round(mean(ensembleTab$pMCRSSA_km2),3), round(median(ensembleTab$pMCRSSA_km2),3)))
-  # print( paste(round(mean(ensembleTab$pRSSA_km2),3), round(median(ensembleTab$pRSSA_km2),3)))
-  # print( paste(round(mean(ensembleTab$pRSSA_pcnt),3), round(median(ensembleTab$pRSSA_pcnt),3)))
-  # print( paste(round(mean(ensembleTab$pMCRSSA_pcnt),3), round(median(ensembleTab$pMCRSSA_pcnt),3)))
   
   # read in binned histogram data and take mean and stdev of ensembles:
   dTab = read.csv(hTabPath[i], header=T)
@@ -1421,8 +1236,8 @@ for (i in 1:nClassB){
   plot(NA, 
        xlim=xlim, 
        ylim=ylim,
-       xlab=paste("RSSA (m2)"), 
-       ylab="N measurements",
+       xlab="", 
+       ylab="",
        bty='n',
        type='n', 
        log='xy',
@@ -1431,11 +1246,13 @@ for (i in 1:nClassB){
        las=T); box(lwd=0.5) 
   if(i %in% c(16:20)){
     xAxis = c(1e1, 1e3, 1e5)
-    axis(1, at=xAxis, labels=formatC(xAxis, digits=0, format="e"), lwd=0.5)
+    axis(1, at=xAxis, labels=formatC(xAxis, digits=0, format="e"), 
+         tcl=-0.5, lwd=0.5, cex.axis=0.7)
   }
   if(i %in% c(1,6,11,16)){
     yAxis = c(1e0, 1e6, 1e12)
-    axis(2, at=yAxis, labels=formatC(yAxis, digits=0, format="e"), las=1, lwd=0.5)
+    axis(2, at=yAxis, labels=formatC(yAxis, digits=0, format="e"), las=1, 
+         tcl=-0.5, lwd=0.5, cex.axis=0.7)
   }
   # add histogram:
   polygon(x=rbind(lB[zC], rB[zC], rB[zC], lB[zC], NA),
@@ -1485,10 +1302,10 @@ for (i in 1:nClassB){
   # add labels:
   text(x=mid[1], 
        y=exp(mean(log(c(dMn[1], ylim[1])))/2),
-       expression(bold(italic('Observed'))), pos=4, cex=0.7) 
+       expression(bold(italic('Observed'))), pos=4, cex=0.6) 
   text(x=exp(mean(log(c(xlim[1], mnTab$pXmin)))),
        y=exp(mean(log(c(dMn[1], ylim[1])))/2),
-       expression(bold(italic('Estimated'))), cex=0.7) 
+       expression(bold(italic('Estimated'))), cex=0.6) 
   
   #####
   # add Class B MLE fit:
@@ -1499,9 +1316,10 @@ for (i in 1:nClassB){
   
   # add legend:
   legend("topright",
-         c(paste0(substr(paste0("0", i), nchar(i), nchar(i)+1), ': ', fN[i]),
+         c(paste0(substr(paste0("0", i), nchar(i), nchar(i)+1), ': ', classB_fN[i]),
+           paste0("%SA: ", round(mnTab$gMCRSSA_pcnt, 2), "±", round(sdTab$gMCRSSA_pcnt, 2),"%"),
            paste0("a = ", round(gpFit[[2]], 2), "±", formatC(round(gpFit[[3]],4), format="g"))),
-         xjust=0, text.col=c(1,1), bty="n", cex=1)
+         xjust=0, text.col=c(1,1,1), bty="n", cex=0.7)
 }
 
 dev.off()
@@ -1509,6 +1327,82 @@ cmd = paste('open', pdfOut)
 system(cmd)
 
 
+
+
+
+##############################################################################
+# Attach mnTab attributes to hydroBASIN shapefile:
+##############################################################################
+# set mn and sd table paths:
+mnTabP = paste0(wd, 'output/figs/figSX_SAfits_classAB_MCmn.csv')
+sdTabP = paste0(wd, 'output/figs/figSX_SAfits_classAB_MCsd.csv')
+
+# read in sorted table of N GRWL obs in each hBasin: 
+nGRWLperBasTab = read.csv(nGRWLperBasinOutPath, header=T)
+nGRWLperBasTab$fP = paste0(wd, "input/GRWL/GRWL_by_hydroBASIN/", nGRWLperBasTab$fN, ".csv")
+
+# run through all Class A and Class B esemble output files and generate
+# a basin mean and std table:
+classAB_fP = as.character(nGRWLperBasTab$fP[nGRWLperBasTab$nGRWLperBas>10000])
+classAB_fN = nGRWLperBasTab$fN[nGRWLperBasTab$nGRWLperBas>10000]
+
+hTabPath = sub(GRWLpath, paste0(tabDirPath, 'ensembleHistTabs/'), classAB_fP)
+ensembleTabPath = sub(GRWLpath, paste0(tabDirPath, 'ensembleOutputTabs/'), classAB_fP)
+
+# run this short calculation if Class A & B basins have been regenerated:
+io = 1; if (io == 1){
+  for (i in 1:length(classAB_fN)){
+    # read in table containing stastistical results of each Monte Carlo simulation
+    # run and take mean and stdev of ensembles:
+    print(i)
+    classAensembleTab = read.csv(ensembleTabPath[i], header=T)
+  
+    if (i == 1){
+      mnTab = as.data.frame(t(colMeans(classAensembleTab, na.rm=T)))
+      sdTab = as.data.frame(t(apply(classAensembleTab, 2, sd, na.rm=T)))
+    }else{
+      mnTab = rbind(mnTab, as.data.frame(t(colMeans(classAensembleTab, na.rm=T))))
+      sdTab = rbind(sdTab, as.data.frame(t(apply(classAensembleTab, 2, sd, na.rm=T))))
+    }
+  }
+  
+  write.csv(mnTab, mnTabP, row.names=F)
+  write.csv(sdTab, sdTabP, row.names=F)
+}else{
+  mnTab = read.csv(mnTabP, header=T)
+  sdTab = read.csv(sdTabP, header=T)
+}
+
+# add column that contains the RSSA valuess used in manuscript:
+classAboo = mnTab$bClass == 1
+classBboo = mnTab$bClass == 2
+mnTab$RSSA_km2[classAboo] = mnTab$pMCRSSA_km2[classAboo]
+mnTab$RSSA_km2[classBboo] = mnTab$gMCRSSA_km2[classBboo]
+sdTab$RSSA_km2[classAboo] = sdTab$pMCRSSA_km2[classAboo]
+sdTab$RSSA_km2[classBboo] = sdTab$gMCRSSA_km2[classBboo]
+# RSSA percentage basin:
+mnTab$RSSA_prct = mnTab$RSSA_km2/mnTab$basinA_km2
+sdTab$RSSA_prct = sdTab$RSSA_km2/mnTab$basinA_km2
+
+# read in hBASIN dbf and attached mnTab attributes to it:
+hBASIN = read.dbf(sub('hybas_allMain.dbf', 'hybas_allMainCopy.dbf', hydroBASINpath))
+if (length(grep("dbf", names(hBASIN)))>0){ hBASIN = hBASIN$dbf }
+
+bindTab = data.frame(array(NA, c(nrow(hBASIN), ncol(mnTab))))
+names(bindTab) = names(mnTab)
+matchInd = match(mnTab$hBASIN_code, hBASIN$MAIN_BAS)
+
+gMat = matrix(as.matrix(mnTab), ncol = ncol(mnTab), dimnames = NULL)
+for (i in 1:length(matchInd)){
+  bindTab[matchInd[i], ] = gMat[i,]
+}
+
+# format table for arcmap shapefile:
+newhBASIN = as.data.frame(cbind(hBASIN, bindTab))
+newhBASIN[is.na(newhBASIN)] = 0
+newhBASIN = data.matrix(newhBASIN)
+
+write.dbf(newhBASIN, hydroBASINpath)
 
 
 
@@ -1526,37 +1420,317 @@ system(cmd)
 
 
 
+# Exploring the relationships between various physigraphic varibles
+# and the percentage of surface area within a basin:
 
-##############################################################################
-# Attach mnTab attributes to hydroBASIN shapefile:
-##############################################################################
-io = 0; if (io == 1){
-  #print(mnTab)
-  
- # mnTab = read.csv(mnTabP, header=T)
-  if (length(grep("dbf", names(mnTab)))>0){ mnTab = mnTab$dbf }
-  
-  # read in hBASIN dbf and attached mnTab attributes to it:
-  hBASIN = read.dbf(sub('hybas_allMain.dbf', 'hybas_allMainCopy.dbf', hydroBASINpath))
-  if (length(grep("dbf", names(hBASIN)))>0){ hBASIN = hBASIN$dbf }
-  
-  bindTab = data.frame(array(NA, c(nrow(hBASIN), ncol(mnTab))))
-  names(bindTab) = names(mnTab)
-  matchInd = match(mnTab$hBASIN_code, hBASIN$MAIN_BAS)
-  
-  gMat = matrix(as.matrix(mnTab), ncol = ncol(mnTab), dimnames = NULL)
-  for (i in 1:length(matchInd)){
-    bindTab[matchInd[i], ] = gMat[i,]
-  }
-  
-  # format table for arcmap shapefile:
-  newhBASIN = as.data.frame(cbind(hBASIN, bindTab))
-  newhBASIN[is.na(newhBASIN)] = 0
-  newhBASIN = data.matrix(newhBASIN)
-  
-  write.dbf(newhBASIN, hydroBASINpath)
-  
+library(foreign)
+library(zyp)
+library(RColorBrewer)
+
+# To produce aridity table, downloaded Zomer et al., 2007 and 
+# in ArcMap --> ArcToolbox --> Zonal Statistics as Table --> Export as DBF
+
+# read in tables:
+hBASIN = foreign::read.dbf(hydroBASINpath)
+if ("fit" %in% names(hBASIN)){hBASIN = hBASIN[ ,(1:32)]}
+aridity = foreign::read.dbf(aridityPath)
+
+# add FID column to hBASIN table to match up data:
+if (!'FID' %in% names(hBASIN)){ FID = 1:nrow(hBASIN)-1; hBASIN = cbind(FID, hBASIN) }
+
+# only use basins with areas larger than 100k km2 to remove small basins
+# that have a %SA value of 0 just because they are small:
+# decreasing the number of basins increases the R2. top 100 basins gives R2=0.8
+
+basinsWithData = order(hBASIN$area_km2[hBASIN$nObs>0], decreasing=T)
+#k = which(hBASIN$nObs>0)[basinsWithData][1:100]
+k = hBASIN$nObs > 0
+#k = hBASIN$area_km2>2e5 
+
+x1 = aridity$MEAN[match(hBASIN$FID[k], aridity$FID_)] 
+x2 = hBASIN$area_km2[k]
+y = hBASIN$SA_pcnt[k]
+w = hBASIN$area_km2[k]
+
+# fit a weighted multiple linear regression to aridity, basin size, and %SA data:
+fit = lm(log(y)~log(x1)+log(x2), weights=w); print(summary(fit))
+
+
+# confidence interval = 1 sigma (0.68):
+fitFun <- function(x1, x2, fit){
+  return(exp(predict(fit, data.frame(x1=x1, x2=x2), interval="confidence", level=0.68)))
 }
+
+###################
+# plots to pdf:
+pdfOut = 'H:/2017_02_08_GRWL_Nature_Manuscript/figs/fig2/fig2c_aridityVsSA.pdf'
+pdf(pdfOut,  width=9, height=4)
+layoutTab = rbind(c(1,1,2,2,3))
+layout(layoutTab)
+
+tab = data.frame(x1, x2, y, w)
+
+yMax = 3
+
+col  = as.vector((fit$residuals-min(fit$residuals))/
+                   (max(fit$residuals)-min(fit$residuals)))
+# Aridity index vs River Area plot:
+dotSize = 2*sqrt(w/pi) - min(2*sqrt(w/pi))+100
+with(tab, symbols(x1, y, circles=dotSize, inches=0.2, 
+                  bg=rgb(1-col,0,col,0.3), 
+                  fg=NA, 
+                  xlim=c(0,2.2e4), 
+                  ylim=c(0,yMax),
+                  main="", 
+                  xlab="Aridity Index (AI)", 
+                  ylab = "Percent River Area (%RA)",
+                  las=1))
+xMin = 0; xMax = max(x1)
+xSeq1= seq(xMin, xMax, length.out=500) #xMin+((0:50)^10/50^10)*(xMax-xMin)
+xMin = 0; xMax = max(x2)
+xSeq2= seq(xMin, xMax, length.out=500) #xMin+((0:50)^10/50^10)*(xMax-xMin)
+
+fitFun1 = fitFun(x1=xSeq1, x2=xSeq2, fit)
+lines(xSeq1, fitFun1[,1], lwd=1.7)
+lines(xSeq1, fitFun1[,2], lwd=0.5, lty=2) # lower confidence
+lines(xSeq1, fitFun1[,3], lwd=0.5, lty=2) # upper confidence
+
+text(xMin, yMax,  
+     paste0("%RA = e^", round(round(fit[[1]][[1]], 1)),
+            " * AI^", round(fit[[1]][[2]],2), 
+            " * BA^", round(fit[[1]][[3]],2)), pos=4)
+
+
+
+# Basin Area vs River Area plot:
+with(tab, symbols(x2, y, circles=dotSize, inches=0.2, bg=rgb(0,0,0,0.5), fg=NA, 
+                  xlim=c(0, max(x2)), ylim=c(0,yMax),
+                  main="ED Figure 2b", 
+                  xlab="Basin Size (km2)", ylab = "Percent River Area (%RA)",
+                  las=1))
+
+fitFun2 = fitFun(x1=xSeq1, x2=xSeq2, fit)
+lines(xSeq2, fitFun2[,1], lwd=1.7)
+lines(xSeq2, fitFun2[,2], lwd=0.5, lty=2) # lower confidence
+lines(xSeq2, fitFun2[,3], lwd=0.5, lty=2) # upper confidence
+
+text(xMin, yMax,  
+     paste0("%RA = e^", round(round(fit[[1]][[1]], 1)),
+            " * AI^", round(fit[[1]][[2]],2), 
+            " * BA^", round(fit[[1]][[3]],2)), pos=4)
+
+# add legend:
+legendAreas = c(1e5, 2.5e5, 5e5, 1e6, 2e6, 6e6)
+dotSize = 2*sqrt(legendAreas/pi) - min(2*sqrt(legendAreas/pi))+100
+legendTab = data.frame(x=rep(1, 6), y=c(1:6), legendAreas) 
+suppressWarnings(with(legendTab, symbols(x, y, circles=dotSize, 
+                                         inches=0.2,  bg=rgb(0,0,0,0.5), fg=NA, 
+                                         main="Basin Area (BA)",
+                                         axes=F, xlab='', ylab='')))
+options(scipen=2)
+text(rep(1, 6), c(1:6)+0.5, paste(legendAreas, "km2"), pos=1, offset=2.5)
+
+dev.off() 
+cmd = paste('open', pdfOut)
+system(cmd)
+
+summary(fit)
+
+
+
+
+
+
+
+
+
+###########
+# use climate-%SA regression to fill in missing basins in hydroBASINs shapefile:
+
+# set up model X and Y:
+ai = aridity$MEAN[match(GRWL$FID, aridity$FID_)]
+perSA = GRWL$SA_pcnt
+basinA = GRWL$area_km2
+
+# for basins with no surface area estimates, use climate-SA model
+# to estimate %SA: 
+modSA = as.data.frame(fitFun(ai, GRWL$area_km2, fit))
+modSA[is.na(modSA)] = 0
+
+# Fill in areas and uncertainty from area extrapolations and 
+# combine error from area extrapolation and climate interpolation:
+modSA$fit[perSA!=0] = perSA[perSA!=0]
+modSA$lwr[perSA!=0] = (perSA-GRWL$SA_sd_pcn)[perSA!=0]
+modSA$upr[perSA!=0] = (perSA+GRWL$SA_sd_pcn)[perSA!=0]
+modSA$uncertainty = modSA$fit - modSA$lwr
+
+# set greenland icesheet to zero:
+modSA[substr(GRWL$MAIN_BAS, 1,1) == "9", ] = 0
+
+# add residual to table:
+climResids = rep(-999, nrow(GRWL))
+climResids[k] = fit$residuals
+
+# add how each basin %SA was estimated: 
+SAestMeth = rep("climInterp", nrow(GRWL))
+SAestMeth[perSA!=0] = "SAextrap"
+SAestMeth[ order(GRWL$nObs, decreasing=T)[1:20]] = "source"
+
+
+
+
+range(modSA$fit)
+sum(GRWL$SA_km2[k])
+sum(GRWL$SA_km2)
+
+globalLandArea = 132773914
+SAtab = colSums(GRWL$area_km2*(modSA/100))
+print(SAtab)
+print(100*SAtab/globalLandArea)
+print(100*(SAtab[[1]]-SAtab[[]])/globalLandArea)
+
+length(which(GRWL$SA_km2 != 0))
+mean(GRWL$pKS_D[k])
+mean(GRWL$pAlpha[k])
+
+GRWL = cbind(GRWL, SAestMeth, modSA, climResids)
+
+
+
+
+
+# Compare results from previous studies:
+raymond_mean = 536000
+raymond_lwr = 399000
+raymond_upr = 673000
+downing_lwr = 585000
+downing_upr = 662000
+GRWL_mean = SAtab[[1]]
+GRWL_lwr = SAtab[[2]]
+GRWL_upr = SAtab[[3]]
+
+areaCompareTab = cbind(downing_lwr, downing_upr, raymond_mean, GRWL_mean)
+par(mar=c(8,5,1,1))
+barplot(areaCompareTab, 
+        ylim=c(0, GRWL_upr),
+        ylab="Global River Area (km)",
+        names.arg = c("Downing et al. \n lower",
+                      "Downing et al. \n upper",
+                      "Raymond et al.",
+                      "This study"),
+        cex.names=1, las=3, col="light gray")
+#arrows(3.1,raymond_mean,3.1,raymond_lwr, 0.1, 90)
+#arrows(3.1,raymond_mean,3.1,raymond_upr, 0.1, 90)
+arrows(4.3,GRWL_mean,4.3,GRWL_lwr, 0.1, 90)
+arrows(4.3,GRWL_mean,4.3,GRWL_upr, 0.1, 90)
+
+perDif = c(round(100*(GRWL_mean-downing_lwr)/downing_lwr), 
+           round(100*(GRWL_mean-downing_upr)/downing_upr), 
+           round(100*(GRWL_mean-raymond_mean)/raymond_mean))
+
+text(c(1,2,3), areaCompareTab[1:3], paste(-perDif, "%"), pos=3)
+
+
+
+
+
+write.dbf(GRWL, GRWLpath)
+
+
+GRWL = foreign::read.dbf(GRWLpath)
+if ("fit" %in% names(GRWL)){GRWL = GRWL[ ,(1:32)]}
+
+
+
+
+
+
+
+
+# area residuals vs braiding: 
+
+
+# plots to pdf:
+pdfOut = 'H:/2017_02_08_GRWL_Nature_Manuscript/figs/fig2/EDfig_braiding_vs_RA.pdf'
+pdf(pdfOut,  width=6, height=4)
+layoutTab = rbind(c(1,1,1,2))
+layout(layoutTab)
+
+
+# plot resids vs mean channels:
+#plot((climResids[k]), (GRWL$nChan_mean[k]))
+#x = lm((GRWL$nChan_mean[k])~(climResids[k]), weights=GRWL$area_km2[k])
+#abline(x)
+#summary(x)
+
+
+x1 = GRWL$nChan_mean[k]
+x2 = GRWL$area_km2[k]
+y = GRWL$climResids[k]
+w = GRWL$area_km2[k]
+
+# fit a weighted multiple linear regression to aridity, basin size, and %SA data:
+fit = lm((y)~(x1), weights=w); print(summary(fit))
+
+# confidence interval = 1 sigma:
+fitFun <- function(x1, fit){
+  return(predict(fit, data.frame(x1=x1), 
+                 interval="confidence", level=0.68))
+}
+
+tab = data.frame(x1, y, w)
+dotSize = 2*sqrt(w/pi) - min(2*sqrt(w/pi))+100
+with(tab, symbols(x1, y, circles=dotSize, inches=0.2, bg=rgb(0,0,0,0.5), fg=NA, 
+                  xlim=c(1, 2.3),
+                  main="", 
+                  xlab="Mean Braiding Index", ylab = "Climate-%SA residual",
+                  las=1))
+
+fitFun1 = fitFun(x1=xSeq1, fit)
+lines(xSeq1, fitFun1[,1], lwd=1.7)
+lines(xSeq1, fitFun1[,2], lwd=0.5, lty=2) # lower confidence
+lines(xSeq1, fitFun1[,3], lwd=0.5, lty=2) # upper confidence
+
+
+# add legend:
+legendAreas = c(1e5, 2.5e5, 5e5, 1e6, 2e6, 6e6)
+dotSize = 2*sqrt(legendAreas/pi) - min(2*sqrt(legendAreas/pi))+100
+legendTab = data.frame(x=rep(1, 6), y=c(1:6), legendAreas) 
+suppressWarnings(with(legendTab, symbols(x, y, circles=dotSize, 
+                                         inches=0.2,  bg=rgb(0,0,0,0.5), fg=NA, 
+                                         main="Basin Area (BA)",
+                                         axes=F, xlab='', ylab='')))
+options(scipen=2)
+text(rep(1, 6), c(1:6)+0.5, paste(legendAreas, "km2"), pos=1, offset=2.5)
+
+dev.off() 
+cmd = paste('open', pdfOut)
+system(cmd)
+
+summary(fit)
+
+
+
+
+
+# for map color bar:
+fit = lm(x1~y, weights=w); print(summary(fit))
+xSeq1 = c(-4, seq(-2, 2, 0.2), 4)
+colBreaks = fit[[1]][[2]]*xSeq1+fit[[1]][[1]]
+print(colBreaks)
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1602,5 +1776,18 @@ io = 0; if (io == 1){
   write.dbf(newhBASIN, hydroBASINpath)
   
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
