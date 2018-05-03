@@ -1214,7 +1214,6 @@ for (i in 1:nClassB){
   dMn = (colMeans(dTab))
   dMn[dMn < ylim[1] & dMn!=0] = ylim[1]
   
-  
   # get histogram breaks:
   lB = c(figBreaks[-length(figBreaks)])
   rB = figBreaks[-1]
@@ -1331,7 +1330,7 @@ system(cmd)
 
 
 ##############################################################################
-# Attach mnTab attributes to hydroBASIN shapefile:
+# Attach mnTab & sdTab attributes to hydroBASIN shapefile:
 ##############################################################################
 # set mn and sd table paths:
 mnTabP = paste0(wd, 'output/figs/figSX_SAfits_classAB_MCmn.csv')
@@ -1381,18 +1380,18 @@ mnTab$RSSA_km2[classBboo] = mnTab$gMCRSSA_km2[classBboo]
 sdTab$RSSA_km2[classAboo] = sdTab$pMCRSSA_km2[classAboo]
 sdTab$RSSA_km2[classBboo] = sdTab$gMCRSSA_km2[classBboo]
 # RSSA percentage basin:
-mnTab$RSSA_prct = mnTab$RSSA_km2/mnTab$basinA_km2
-sdTab$RSSA_prct = sdTab$RSSA_km2/mnTab$basinA_km2
+mnTab$RSSA_pcnt = mnTab$RSSA_km2/mnTab$basinA_km2
+sdTab$RSSA_pcnt = sdTab$RSSA_km2/mnTab$basinA_km2
+# update headers of sdTab to distinguish them from mnTab headers:
+names(sdTab) = paste0("sd_",names(mnTab))
 
-# read in hBASIN dbf and attached mnTab attributes to it:
-hBASIN = read.dbf(sub('hybas_allMain.dbf', 'hybas_allMainCopy.dbf', hydroBASINpath))
-if (length(grep("dbf", names(hBASIN)))>0){ hBASIN = hBASIN$dbf }
 
-bindTab = data.frame(array(NA, c(nrow(hBASIN), ncol(mnTab))))
-names(bindTab) = names(mnTab)
+# read in hBASIN dbf and attached mnTab & sdTab attributes to it:
+hBASIN = foreign::read.dbf(sub('hybas_allMain.dbf', 'hybas_allMainCopy.dbf', hydroBASINpath))
+bindTab = data.frame(array(NA, c(nrow(hBASIN), ncol(mnTab)+ncol(sdTab))))
+names(bindTab) = c(names(mnTab), names(sdTab))
 matchInd = match(mnTab$hBASIN_code, hBASIN$MAIN_BAS)
-
-gMat = matrix(as.matrix(mnTab), ncol = ncol(mnTab), dimnames = NULL)
+gMat = matrix(as.matrix(cbind(mnTab,sdTab)), ncol = ncol(mnTab)+ncol(sdTab), dimnames = NULL)
 for (i in 1:length(matchInd)){
   bindTab[matchInd[i], ] = gMat[i,]
 }
@@ -1423,112 +1422,120 @@ write.dbf(newhBASIN, hydroBASINpath)
 # Exploring the relationships between various physigraphic varibles
 # and the percentage of surface area within a basin:
 
-library(foreign)
-library(zyp)
-library(RColorBrewer)
+# library(zyp)
+# library(RColorBrewer)
 
 # To produce aridity table, downloaded Zomer et al., 2007 and 
 # in ArcMap --> ArcToolbox --> Zonal Statistics as Table --> Export as DBF
 
-# read in tables:
+# read in and process hydroBasin table:
 hBASIN = foreign::read.dbf(hydroBASINpath)
-if ("fit" %in% names(hBASIN)){hBASIN = hBASIN[ ,(1:32)]}
+if ("fit" %in% names(hBASIN)){hBASIN = hBASIN[ ,(1:30)]}
+# add FID column to hBASIN table to match up data:
+if (!'FID' %in% names(hBASIN)){ 
+  FID = 1:nrow(hBASIN)-1; hBASIN = cbind(FID, hBASIN) 
+}
+# determine which basins are of Class A & B:
+classABboo = hBASIN$bClass > 0
+
+# read in aridity table:
 aridity = foreign::read.dbf(aridityPath)
 
-# add FID column to hBASIN table to match up data:
-if (!'FID' %in% names(hBASIN)){ FID = 1:nrow(hBASIN)-1; hBASIN = cbind(FID, hBASIN) }
-
-# only use basins with areas larger than 100k km2 to remove small basins
-# that have a %SA value of 0 just because they are small:
-# decreasing the number of basins increases the R2. top 100 basins gives R2=0.8
-
-basinsWithData = order(hBASIN$area_km2[hBASIN$nObs>0], decreasing=T)
-#k = which(hBASIN$nObs>0)[basinsWithData][1:100]
-k = hBASIN$nObs > 0
-#k = hBASIN$area_km2>2e5 
-
-x1 = aridity$MEAN[match(hBASIN$FID[k], aridity$FID_)] 
-x2 = hBASIN$area_km2[k]
-y = hBASIN$SA_pcnt[k]
-w = hBASIN$area_km2[k]
+x1 = aridity$MEAN[match(hBASIN$FID[classABboo], aridity$FID_)] 
+x2 = hBASIN$area_km2[classABboo]
+y = 100*hBASIN$RSSA_pcnt[classABboo]
+w = hBASIN$area_km2[classABboo]
 
 # fit a weighted multiple linear regression to aridity, basin size, and %SA data:
 fit = lm(log(y)~log(x1)+log(x2), weights=w); print(summary(fit))
-
 
 # confidence interval = 1 sigma (0.68):
 fitFun <- function(x1, x2, fit){
   return(exp(predict(fit, data.frame(x1=x1, x2=x2), interval="confidence", level=0.68)))
 }
 
-###################
-# plots to pdf:
-pdfOut = 'H:/2017_02_08_GRWL_Nature_Manuscript/figs/fig2/fig2c_aridityVsSA.pdf'
-pdf(pdfOut,  width=9, height=4)
-layoutTab = rbind(c(1,1,2,2,3))
+
+
+
+# Plot multiple regression (Fig. 3E)
+pdfOut = paste0(wd, 'output/figs/fig3E_ClassC_regression.pdf')
+pdf(pdfOut,  width=3, height=2.4)
+layoutTab = rbind(c(1,1,1,1,2))
 layout(layoutTab)
+par(mar=c(5.1,4.1,1,1))
 
+# create plotting table:
 tab = data.frame(x1, x2, y, w)
-
-yMax = 3
-
-col  = as.vector((fit$residuals-min(fit$residuals))/
-                   (max(fit$residuals)-min(fit$residuals)))
+yRange = c(0, 3)
+xRange = c(0, 2.2e4)
 # Aridity index vs River Area plot:
-dotSize = 2*sqrt(w/pi) - min(2*sqrt(w/pi))+100
-with(tab, symbols(x1, y, circles=dotSize, inches=0.2, 
-                  bg=rgb(1-col,0,col,0.3), 
-                  fg=NA, 
-                  xlim=c(0,2.2e4), 
-                  ylim=c(0,yMax),
-                  main="", 
-                  xlab="Aridity Index (AI)", 
-                  ylab = "Percent River Area (%RA)",
-                  las=1))
-xMin = 0; xMax = max(x1)
-xSeq1= seq(xMin, xMax, length.out=500) #xMin+((0:50)^10/50^10)*(xMax-xMin)
-xMin = 0; xMax = max(x2)
-xSeq2= seq(xMin, xMax, length.out=500) #xMin+((0:50)^10/50^10)*(xMax-xMin)
+# rescale dot radius for plot:
+dSize = 2*sqrt(w/pi)
+dotSize = dSize - min(dSize)+100
+with(tab, symbols(x1, y, 
+                  circles=dotSize, inches=0.12, 
+                  bg=rgb(0,0,0,.3), fg=NA, 
+                  xlim=xRange, ylim=yRange,
+                  main="", xlab="Aridity Index (AI)", ylab = "%RSSA", cex.lab=0.7,
+                  las=1, bty='n', xaxt='n', yaxt='n')); box(lwd=0.5) 
 
+xAxis = seq(xRange[1], xRange[2], length.out=3)
+yAxis =  round(seq(yRange[1], yRange[2], length.out=4))
+axis(1, at=xAxis, labels=formatC(xAxis, digits=0, format="e"), 
+     tcl=-0.5, lwd=0.5, cex.axis=0.7)
+axis(2, at=yAxis, labels=formatC(yAxis, digits=0, format="f"), las=1, 
+     tcl=-0.5, lwd=0.5, cex.axis=0.7)
+# plot regressions:
+xSeq1= seq(xRange[1], xRange[2], length.out=500) #xMin+((0:50)^10/50^10)*(xMax-xMin)
 fitFun1 = fitFun(x1=xSeq1, x2=xSeq2, fit)
-lines(xSeq1, fitFun1[,1], lwd=1.7)
-lines(xSeq1, fitFun1[,2], lwd=0.5, lty=2) # lower confidence
-lines(xSeq1, fitFun1[,3], lwd=0.5, lty=2) # upper confidence
-
+lines(xSeq1, fitFun1[,1], lwd=1)
+lines(xSeq1, fitFun1[,2], lwd=1, lty=3) # lower confidence
+lines(xSeq1, fitFun1[,3], lwd=1, lty=3) # upper confidence
+# add regression equation:
 text(xMin, yMax,  
-     paste0("%RA = e^", round(round(fit[[1]][[1]], 1)),
+     paste0("%RSSA = e^", round(round(fit[[1]][[1]], 1)),
             " * AI^", round(fit[[1]][[2]],2), 
-            " * BA^", round(fit[[1]][[3]],2)), pos=4)
+            " * BA^", round(fit[[1]][[3]],2)), 
+     cex=0.7, pos=4)
 
 
+# # Basin Area vs River Area plot:
+# with(tab, symbols(x2, y, circles=dotSize, inches=0.12, bg=rgb(0,0,0,0.5), fg=NA, 
+#                   xlim=c(0, max(x2)), ylim=c(0,yMax),main="ED Figure 2b", 
+#                   xlab="Basin Size (km2)", ylab = "Percent River Area (%RSSA)",
+#                   las=1))
+#xMin = 0; xMax = max(x2)
+#xSeq2= seq(xMin, xMax, length.out=500) #xMin+((0:50)^10/50^10)*(xMax-xMin)
+# fitFun2 = fitFun(x1=xSeq1, x2=xSeq2, fit)
+# lines(xSeq2, fitFun2[,1], lwd=1.7)
+# lines(xSeq2, fitFun2[,2], lwd=0.5, lty=2) # lower confidence
+# lines(xSeq2, fitFun2[,3], lwd=0.5, lty=2) # upper confidence
+# text(xMin, yMax,  
+#      paste0("%RSSA = e^", round(round(fit[[1]][[1]], 1)),
+#             " * AI^", round(fit[[1]][[2]],2), 
+#             " * BA^", round(fit[[1]][[3]],2)), pos=4)
 
-# Basin Area vs River Area plot:
-with(tab, symbols(x2, y, circles=dotSize, inches=0.2, bg=rgb(0,0,0,0.5), fg=NA, 
-                  xlim=c(0, max(x2)), ylim=c(0,yMax),
-                  main="ED Figure 2b", 
-                  xlab="Basin Size (km2)", ylab = "Percent River Area (%RA)",
-                  las=1))
-
-fitFun2 = fitFun(x1=xSeq1, x2=xSeq2, fit)
-lines(xSeq2, fitFun2[,1], lwd=1.7)
-lines(xSeq2, fitFun2[,2], lwd=0.5, lty=2) # lower confidence
-lines(xSeq2, fitFun2[,3], lwd=0.5, lty=2) # upper confidence
-
-text(xMin, yMax,  
-     paste0("%RA = e^", round(round(fit[[1]][[1]], 1)),
-            " * AI^", round(fit[[1]][[2]],2), 
-            " * BA^", round(fit[[1]][[3]],2)), pos=4)
 
 # add legend:
-legendAreas = c(1e5, 2.5e5, 5e5, 1e6, 2e6, 6e6)
-dotSize = 2*sqrt(legendAreas/pi) - min(2*sqrt(legendAreas/pi))+100
-legendTab = data.frame(x=rep(1, 6), y=c(1:6), legendAreas) 
-suppressWarnings(with(legendTab, symbols(x, y, circles=dotSize, 
-                                         inches=0.2,  bg=rgb(0,0,0,0.5), fg=NA, 
-                                         main="Basin Area (BA)",
-                                         axes=F, xlab='', ylab='')))
+par(mar=c(4.1,1,2.1,1))
+par(mai=c(0.4,0,0.2,0))
+
+legendAreas = c(1e5, 5e5, 2e6, 6e6)
+dSizeLeg = 2*sqrt(legendAreas/pi)
+dotSizeLeg = dSizeLeg - min(dSizeLeg)+100
+legendTab = data.frame(x=rep(1, length(legendAreas)), 
+                       y=c(1:length(legendAreas)), legendAreas) 
+suppressWarnings(with(legendTab, symbols(x, rev(y), circles=dotSizeLeg, 
+                                         inches=0.12,  bg=rgb(0,0,0,0.5), fg=NA,
+                                         ylim = c(0, length(legendAreas)+1),
+                                         main="", axes=F, xlab='', ylab='')))
+title("Basin\nArea\n(BA)", line=-2, cex.main=1)
 options(scipen=2)
-text(rep(1, 6), c(1:6)+0.5, paste(legendAreas, "km2"), pos=1, offset=2.5)
+text(rep(1, length(legendAreas)), 
+     c(1:length(legendAreas)) + 0.5, 
+     rev(paste(labels=formatC(legendAreas, digits=0, format="e"), "km2")), 
+     pos=1, offset=150*dotSizeLeg/max(dotSizeLeg)-3.5,
+     cex=0.7)
 
 dev.off() 
 cmd = paste('open', pdfOut)
@@ -1541,62 +1548,59 @@ summary(fit)
 
 
 
-
-
-
-###########
-# use climate-%SA regression to fill in missing basins in hydroBASINs shapefile:
+##############################################################################
+# Calculate RSSA in Class C hydroBASINs
+##############################################################################
+# use climate-%RSSA regression to fill in missing basins in hydroBASINs shapefile:
 
 # set up model X and Y:
-ai = aridity$MEAN[match(GRWL$FID, aridity$FID_)]
-perSA = GRWL$SA_pcnt
-basinA = GRWL$area_km2
+ai = aridity$MEAN[match(hBASIN$FID, aridity$FID_)]
+perRSSA = hBASIN$RSSA_pcnt
+BA = hBASIN$area_km2
 
 # for basins with no surface area estimates, use climate-SA model
-# to estimate %SA: 
-modSA = as.data.frame(fitFun(ai, GRWL$area_km2, fit))
-modSA[is.na(modSA)] = 0
+# to estimate %RSSA: 
+modRSSA = as.data.frame(fitFun(ai, BA, fit))
+modRSSA[is.na(modRSSA)] = 0
 
 # Fill in areas and uncertainty from area extrapolations and 
 # combine error from area extrapolation and climate interpolation:
-modSA$fit[perSA!=0] = perSA[perSA!=0]
-modSA$lwr[perSA!=0] = (perSA-GRWL$SA_sd_pcn)[perSA!=0]
-modSA$upr[perSA!=0] = (perSA+GRWL$SA_sd_pcn)[perSA!=0]
-modSA$uncertainty = modSA$fit - modSA$lwr
+modRSSA$fit[perRSSA!=0] = perRSSA[perRSSA!=0]
+modRSSA$lwr[perRSSA!=0] = (perRSSA-hBASIN$sd_RSSA_pc)[perRSSA!=0]
+modRSSA$upr[perRSSA!=0] = (perRSSA+hBASIN$sd_RSSA_pc)[perRSSA!=0]
+modRSSA$uncertainty = modRSSA$fit - modRSSA$lwr
 
 # set greenland icesheet to zero:
-modSA[substr(GRWL$MAIN_BAS, 1,1) == "9", ] = 0
+modRSSA[substr(hBASIN$MAIN_BAS, 1,1) == "9", ] = 0
 
 # add residual to table:
-climResids = rep(-999, nrow(GRWL))
-climResids[k] = fit$residuals
+climResids = rep(-999, nrow(hBASIN))
+climResids[classABboo] = fit$residuals
 
-# add how each basin %SA was estimated: 
-SAestMeth = rep("climInterp", nrow(GRWL))
-SAestMeth[perSA!=0] = "SAextrap"
-SAestMeth[ order(GRWL$nObs, decreasing=T)[1:20]] = "source"
+hBASIN$RSSA_pcnt[perRSSA==0] = modRSSA$fit[perRSSA==0]
+hBASIN$RSSA_km2[perRSSA==0] = modRSSA$fit[perRSSA==0]*hBASIN$area_km2[perRSSA==0]
+hBASIN$sd_RSSA_pc[perRSSA==0] = modRSSA$uncertainty[perRSSA==0]
+hBASIN$sd_RSSA_km[perRSSA==0] = modRSSA$uncertainty[perRSSA==0]*hBASIN$area_km2[perRSSA==0]
 
+# add how each basin %RSSA was estimated: 
+hBASIN$bClass[perRSSA==0] = 3
+#SAestMeth[ order(hBASIN$nObs, decreasing=T)[1:20]] = "source"
 
-
-
-range(modSA$fit)
-sum(GRWL$SA_km2[k])
-sum(GRWL$SA_km2)
+range(modRSSA$fit)
+sum(hBASIN$RSSA_km2[classABboo])
+sum(hBASIN$RSSA_km2)
 
 globalLandArea = 132773914
-SAtab = colSums(GRWL$area_km2*(modSA/100))
-print(SAtab)
-print(100*SAtab/globalLandArea)
-print(100*(SAtab[[1]]-SAtab[[]])/globalLandArea)
+RSSAtab = colSums(BA*(modRSSA/100), na.rm=T)
+print(RSSAtab)
+print(100*RSSAtab/globalLandArea)
+print(100*(RSSAtab[[1]]-RSSAtab[[2]])/globalLandArea)
 
-length(which(GRWL$SA_km2 != 0))
-mean(GRWL$pKS_D[k])
-mean(GRWL$pAlpha[k])
+length(which(hBASIN$RSSA_km2 != 0))
+mean(hBASIN$pKS_D[classABboo])
+mean(hBASIN$pMCalpha[classABboo])
 
-GRWL = cbind(GRWL, SAestMeth, modSA, climResids)
-
-
-
+hBASIN = cbind(hBASIN, modRSSA, climResids)
 
 
 # Compare results from previous studies:
@@ -1605,14 +1609,14 @@ raymond_lwr = 399000
 raymond_upr = 673000
 downing_lwr = 585000
 downing_upr = 662000
-GRWL_mean = SAtab[[1]]
-GRWL_lwr = SAtab[[2]]
-GRWL_upr = SAtab[[3]]
+hBASIN_mean = RSSAtab[[1]]
+hBASIN_lwr = RSSAtab[[2]]
+hBASIN_upr = RSSAtab[[3]]
 
-areaCompareTab = cbind(downing_lwr, downing_upr, raymond_mean, GRWL_mean)
+areaCompareTab = cbind(downing_lwr, downing_upr, raymond_mean, hBASIN_mean)
 par(mar=c(8,5,1,1))
 barplot(areaCompareTab, 
-        ylim=c(0, GRWL_upr),
+        ylim=c(0, hBASIN_upr),
         ylab="Global River Area (km)",
         names.arg = c("Downing et al. \n lower",
                       "Downing et al. \n upper",
@@ -1621,161 +1625,27 @@ barplot(areaCompareTab,
         cex.names=1, las=3, col="light gray")
 #arrows(3.1,raymond_mean,3.1,raymond_lwr, 0.1, 90)
 #arrows(3.1,raymond_mean,3.1,raymond_upr, 0.1, 90)
-arrows(4.3,GRWL_mean,4.3,GRWL_lwr, 0.1, 90)
-arrows(4.3,GRWL_mean,4.3,GRWL_upr, 0.1, 90)
+arrows(4.3,hBASIN_mean,4.3,hBASIN_lwr, 0.1, 90)
+arrows(4.3,hBASIN_mean,4.3,hBASIN_upr, 0.1, 90)
 
-perDif = c(round(100*(GRWL_mean-downing_lwr)/downing_lwr), 
-           round(100*(GRWL_mean-downing_upr)/downing_upr), 
-           round(100*(GRWL_mean-raymond_mean)/raymond_mean))
+perDif = c(round(100*(hBASIN_mean-downing_lwr)/downing_lwr), 
+           round(100*(hBASIN_mean-downing_upr)/downing_upr), 
+           round(100*(hBASIN_mean-raymond_mean)/raymond_mean))
 
 text(c(1,2,3), areaCompareTab[1:3], paste(-perDif, "%"), pos=3)
 
 
+write.dbf(hBASIN, hBASINpath)
 
 
-
-write.dbf(GRWL, GRWLpath)
-
-
-GRWL = foreign::read.dbf(GRWLpath)
-if ("fit" %in% names(GRWL)){GRWL = GRWL[ ,(1:32)]}
-
+hBASIN = foreign::read.dbf(hBASINpath)
+if ("fit" %in% names(hBASIN)){hBASIN = hBASIN[ ,(1:32)]}
 
 
 
 
 
 
-
-# area residuals vs braiding: 
-
-
-# plots to pdf:
-pdfOut = 'H:/2017_02_08_GRWL_Nature_Manuscript/figs/fig2/EDfig_braiding_vs_RA.pdf'
-pdf(pdfOut,  width=6, height=4)
-layoutTab = rbind(c(1,1,1,2))
-layout(layoutTab)
-
-
-# plot resids vs mean channels:
-#plot((climResids[k]), (GRWL$nChan_mean[k]))
-#x = lm((GRWL$nChan_mean[k])~(climResids[k]), weights=GRWL$area_km2[k])
-#abline(x)
-#summary(x)
-
-
-x1 = GRWL$nChan_mean[k]
-x2 = GRWL$area_km2[k]
-y = GRWL$climResids[k]
-w = GRWL$area_km2[k]
-
-# fit a weighted multiple linear regression to aridity, basin size, and %SA data:
-fit = lm((y)~(x1), weights=w); print(summary(fit))
-
-# confidence interval = 1 sigma:
-fitFun <- function(x1, fit){
-  return(predict(fit, data.frame(x1=x1), 
-                 interval="confidence", level=0.68))
-}
-
-tab = data.frame(x1, y, w)
-dotSize = 2*sqrt(w/pi) - min(2*sqrt(w/pi))+100
-with(tab, symbols(x1, y, circles=dotSize, inches=0.2, bg=rgb(0,0,0,0.5), fg=NA, 
-                  xlim=c(1, 2.3),
-                  main="", 
-                  xlab="Mean Braiding Index", ylab = "Climate-%SA residual",
-                  las=1))
-
-fitFun1 = fitFun(x1=xSeq1, fit)
-lines(xSeq1, fitFun1[,1], lwd=1.7)
-lines(xSeq1, fitFun1[,2], lwd=0.5, lty=2) # lower confidence
-lines(xSeq1, fitFun1[,3], lwd=0.5, lty=2) # upper confidence
-
-
-# add legend:
-legendAreas = c(1e5, 2.5e5, 5e5, 1e6, 2e6, 6e6)
-dotSize = 2*sqrt(legendAreas/pi) - min(2*sqrt(legendAreas/pi))+100
-legendTab = data.frame(x=rep(1, 6), y=c(1:6), legendAreas) 
-suppressWarnings(with(legendTab, symbols(x, y, circles=dotSize, 
-                                         inches=0.2,  bg=rgb(0,0,0,0.5), fg=NA, 
-                                         main="Basin Area (BA)",
-                                         axes=F, xlab='', ylab='')))
-options(scipen=2)
-text(rep(1, 6), c(1:6)+0.5, paste(legendAreas, "km2"), pos=1, offset=2.5)
-
-dev.off() 
-cmd = paste('open', pdfOut)
-system(cmd)
-
-summary(fit)
-
-
-
-
-
-# for map color bar:
-fit = lm(x1~y, weights=w); print(summary(fit))
-xSeq1 = c(-4, seq(-2, 2, 0.2), 4)
-colBreaks = fit[[1]][[2]]*xSeq1+fit[[1]][[1]]
-print(colBreaks)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# Import real fits from large river networks:
-####################################################
-io = 0; if (io == 1){
-  #print(mnTab)
-  
- # mnTab = read.csv(mnTabP, header=T)
-  if (length(grep("dbf", names(mnTab)))>0){ mnTab = mnTab$dbf }
-  if (length(grep("Amax", names(mnTab)))>0){ mnTab = mnTab[, -which(names(mnTab)=="Amax")] }
-  
-  bPath = 'H:/2017_02_08_GRWL_Nature_Manuscript/figs/fig2/hydroBasin_SAfitStatistics_minW90_NobsGt100000.csv'
-  bgTab = read.csv(bPath, header=T)
-  if (length(grep("dbf", names(bgTab)))>0){ bgTab = mnTab$dbf }
-  
-  j = match(bgTab$hBASIN_code, mnTab$hBASIN_code)
-  mnTab = mnTab[-j,]
-  mnTab = rbind(mnTab, bgTab)
-  
-  # read in hBASIN dbf and attached mnTab attributes to it:
-  hBASIN = read.dbf(sub('hybas_allMain.dbf', 'hybas_allMainCopy.dbf', hydroBASINpath))
-  if (length(grep("dbf", names(hBASIN)))>0){ hBASIN = hBASIN$dbf }
-  
-  bindTab = data.frame(array(NA, c(nrow(hBASIN), ncol(mnTab))))
-  names(bindTab) = names(mnTab)
-  matchInd = match(mnTab$hBASIN_code, hBASIN$MAIN_BAS)
-  
-  gMat = matrix(as.matrix(mnTab), ncol = ncol(mnTab), dimnames = NULL)
-  for (i in 1:length(matchInd)){
-    bindTab[matchInd[i], ] = gMat[i,]
-  }
-  
-  # format table for arcmap shapefile:
-  newhBASIN = as.data.frame(cbind(hBASIN, bindTab))
-  newhBASIN[is.na(newhBASIN)] = 0
-  newhBASIN = data.matrix(newhBASIN)
-  
-  write.dbf(newhBASIN, hydroBASINpath)
-  
-}
 
 
 
