@@ -2,12 +2,41 @@
 # RSSA_calc.R
 ##############################################################################
 # George H. Allen
-
-# Description: coming soon
-
-
+#
+# Description: 
+# This code calculate River and Stream Surface Area (RSSA) for all non-
+# glaciated regions globally using the river width and length measurements
+# from the GRWL database. 
+# 
+# Classify each HydroBASIN (hBASIN) into one of three categories:
+# Class A: basins that contain >250,000 measurements (N=20)
+# Class B: basins that contain 10,000 to 250,000 measurements
+# Class C: basins that contain ≤10,000 measurements 
+# In Class A basins, we estimated the total RSSA by extending a fitted Pareto 
+# frequency distribution down to the median first-order wetted stream width of
+# 32±8 cm (22) (Fig. 3C). In Class B basins (N=294), which contain insufficient
+# GRWL data to exhibit a well-developed fractal RSSA distribution, we use the 
+# average Pareto shape parameter established in Class A basins (fig. S2) to 
+# extend the RSSA distribution to first order streams (Fig. 3D). Class C 
+# basins contain very little GRWL data, so we developed an empirical power-law 
+# relationship between climate aridity (23), basin area (21), and percent 
+# basin occupied by RSSA.
+# 
+# Inputs: 
+# 1. GRWL data Subsetted by HydroBASIN in ArcGIS (used Spatial Join) from 
+# Allen and Pavelsky (2018)
+# 2. Table listing Class A basin codes and their names
+# 3. HydroBASINS: Lehner et al. (2013) https://doi.org/10.1002/hyp.9740
+# 4. In situ river width validation data from Allen et al. (2018)
+# 5. Aridity Index from Zomer et al. (2008): 
+# https://doi.org/10.1016/j.agee.2008.01.014
+#
+# Outputs:
+# tables and figures presented in Allen et al. (2018)
+#
+#
 ##############################################################################
-# load packages
+# Load R packages
 ##############################################################################
 if (!"foreign" %in% rownames(installed.packages())){
   install.packages("foreign")}; require(foreign)
@@ -16,18 +45,30 @@ if (!"MASS" %in% rownames(installed.packages())){
 
 
 ##############################################################################
-# hard-coded variables
+# Hard-coded variables
 ##############################################################################
 
 # specify root paths:
 wd = "/Users/geoallen/Documents/research/2018_01_08_Science_submission_GRWL/git/RSSA/"
+
+# Input file paths:
+# GRWL data Subsetted by HydroBASIN in ArcGIS (used Spatial Join) from 
+# Allen and Pavelsky (2018):
 GRWLpath = paste0(wd, 'input/GRWL/GRWL_by_hydroBASIN/')
+# HydroBASINS: Lehner et al. (2013) https://doi.org/10.1002/hyp.9740
 hydroBASINpath = paste0(wd, 'input/basin_shapefiles/hydroBASINs/hybas_allMain.dbf')
+# In situ river width validation data from Allen et al. (2018)
 valPath = paste0(wd, 'input/validation/Database_S1_GRWL_validation_data.csv')
-tabDirPath = paste0(wd, 'output/tabs/')
-nGRWLperBasinOutPath = paste0(tabDirPath, "nGRWLperBasinTab/nGRWLperBas.csv")
-aridityPath = paste0(wd, 'input/aridity/aridityByBasin.dbf')
+# Table listing Class A basin codes and their names
 classA_bNamesPath = paste0(wd, 'input/misc/classA_bNames.csv')
+# Aridity Index from Zomer et al. (2008): 
+# https://doi.org/10.1016/j.agee.2008.01.014
+aridityPath = paste0(wd, 'input/aridity/aridityByBasin.dbf')
+
+# Output file paths:
+tabDirPath = paste0(wd, 'output/tabs/')
+figDirPath = paste0(wd, 'output/figs/')
+nGRWLperBasinOutPath = paste0(tabDirPath, "nGRWLperBasinTab/nGRWLperBas.csv")
 
 # get file paths & codes: 
 fP = list.files(GRWLpath, 'csv', full.names=T)
@@ -36,29 +77,38 @@ fN = sub('.csv', '', fN)
 hBASIN_code = sub("GRWL_", '', fN)
 ensembleTabPath = sub(GRWLpath, paste0(tabDirPath, 'ensembleOutputTabs'), fP)
 
-# convert area units to reduce the size of numbers 
-# to prevent overflow on MLE statistical tests:
-reducer = 100
-mL = mean(c(30, 30*sqrt(2)))/reducer 
-minL = 30/reducer
+# define constants: 
+reducer = 100 # convert area units to prevent overflow on max. liklihood. est.
+minL = 30/reducer # pixel resoluton
+mL = mean(c(30, 30*sqrt(2)))/reducer # mean length between GRWL centerline pixels
 int = 100*mL  # plotting histogram binning interval
-wMin = 90
-Amin = wMin*mL # minimum value to bin
+wMin = 90 # minimum river width to threshold
+Amin = wMin*mL # minimum river area value to threshold
 minNobs = 2.5e5  # minimum number of GRWL observations in a basin for analysis
 minElev = 0 # include rivers above this elevation (m)
 hMax = 10725 # maximum limit to Class A histogram graphs
 figBreaks = seq(Amin, hMax+int, int)*reducer
-
-# define minimum extrapolate bounds from Allen et al. Nature Communications
-# DOI: s41467-018-02991-w
+nRun = 500# number of Monte Carlo simulation ensemble runs
+# set lower extrapolation bounds from Allen et al. (2018): 
+# https://doi.org/10.1038/s41467-018-02991-w : 
 fOaMean = 0.321*mL # mean of the median widths of 1st order streams
 fOaSD = 0.077*mL # sd width of 1st order streams
 fOaMeans = c(fOaMean-fOaSD, fOaMean, fOaMean+fOaSD)
+globalLandArea = 132773914 # area of Earth's non-glaciated land surface
+# Class A MLE mean fit: 
+# gpFit = list(
+#   xm=Amin*reducer,
+#   alpha=0.90345, # 20 basin with most obs, min elev = 0
+#   stdev=0.06285026
+# ) # 20 basins with most obs, min elev = 0
+# from Monte Carlo derived mean:
+gpFit = list(
+  xm = 3259.274, #mnTab$pXmin,
+  alpha = 1.019686, #mnTab$pMCalpha,
+  stdev = 0.1213816 #sdTab$pMCalpha
+)
 
-# number of Monte Carlo simulation ensemble runs to estimate error:
-nRun = 500
-
-# create table to store outputs of each Monte Carlo enseble run:
+# create large table to store outputs of each Monte Carlo enseble run:
 ensembleTabNames = c("hBASIN_code", 
               "basinA_km2", 
               "nObs",
@@ -96,27 +146,14 @@ mnTab = data.frame(array(NA, c(1, length(ensembleTabNames))))
 names(mnTab) = ensembleTabNames
 sdTab = mnTab
 
-# Class A MLE mean fit: 
-# gpFit = list(xm=Amin, 
-#              alpha=0.90345, # 20 basin with most obs, min elev = 0
-#              stdev=0.06285026) # 20 basins with most obs, min elev = 0
-gpFit = list(
-  xm = 3259.274, #mnTab$pXmin,
-  alpha = 1.019686, #mnTab$pMCalpha,
-  stdev = 0.1213816 #sdTab$pMCalpha
-)
-
-
-# total surface area of Earth's non glaciated land surface:
-globalLandArea = 132773914
 
 ##############################################################################
-# functions
+# Functions
 ##############################################################################
 
 # list N GRWL measurements in each hBasin. This list is used to efficiently
 # sort through the classes of basins used in RSSA extrapolation:
-nGRWLperBasListGenerator <- function(fP, tabDirPath, nGRWLperBasinOutPath){
+nGRWLperBasListGenerator <- function(fP, fN, tabDirPath, wMin, minElev, nGRWLperBasinOutPath){
   # generate list of GRWL measurements in each hBasin:
   NfP = length(fP)
   fP_ind = 1:NfP
@@ -346,6 +383,16 @@ tabRounder <- function(tab){
   return(tab)
 }
 
+# weighted multiple power-law regression:
+fitFun <- function(x1, x2, fit, confInt=NA){
+  # if a confidence interval is specified, return a table with mean fit
+  # with confidence intervals, otherwise only return mean fit vector:
+  if (!is.na(confInt)){
+    return(exp(predict(fit, data.frame(x1=x1, x2=x2), interval="confidence", level=confInt)))
+  }else{
+    return(as.vector(exp(predict(fit, data.frame(x1=x1, x2=x2)))))
+  }
+}
 ##############################################################################
 # RivWidth-based error estimate
 ##############################################################################
@@ -388,7 +435,7 @@ print(paste0("GRWL error Monte Carlo  mean = ", round(nfit[1]),
 
 
 ##############################################################################
-# Calculate RSSA in Class A hydroBASINs
+# Class A: Calculate RSSA
 ##############################################################################
 # In Class A basins, We use a Monte Carlo simulation to characterize 
 # RSSA error due to the uncertainty of GRWL measurements. For each ensemble 
@@ -406,7 +453,7 @@ hBASIN = foreign::read.dbf(sub('hybas_allMain', 'hybas_allMainCopy', hydroBASINp
 
 # if list file does not exist, create a list N GRWL obs. in each hBasin: 
 if (!file.exists(nGRWLperBasinOutPath)){
-  nGRWLperBasListGenerator(fP, tabDirPath, nGRWLperBasinOutPath)
+  nGRWLperBasListGenerator(fP, fN, tabDirPath, wMin, minElev, nGRWLperBasinOutPath)
 }
 # read in sorted table of N GRWL obs in each hBasin: 
 nGRWLperBasTab = read.csv(nGRWLperBasinOutPath, header=T)
@@ -425,7 +472,6 @@ ensembleTabPath = sub(GRWLpath, paste0(tabDirPath, 'ensembleOutputTabs/'), class
 nClassA = length(classA_fP)
 print(paste("Class A Basins:", paste(classA_fN, collapse=" ")))
 
-
 # get basin area in km2:
 basinArea = hBASIN$area_km2[match(classA_fN, hBASIN$MAIN_BAS)] 
 
@@ -441,10 +487,10 @@ for (i in 1:nClassA){
   csv_raw = read.csv(classA_fP[i], header=T)
   N_raw = nrow(csv_raw)
   
-  # Monte Carlo error propogation: ####
+  # Monte Carlo error propogation:
   for (j in 1:nRun){
     
-    print(paste("Run:", j))
+    print(paste("Run:", j, "of", nRun))
     
     # reset perturbed GRWL table to original GRWL data: 
     csv = csv_raw
@@ -472,9 +518,8 @@ for (i in 1:nClassA){
     Alen = length(A)
     # calculate the average number of channels: 
     nChan = mean(csv$nchannels)
-
     
-    # Maximum Liklihood Estimation fit: ####
+    # Maximum Liklihood Estimation (MLE) fit:
     
     # set std=T to calc. std dev of fit using MLE optimization,
     # which is slow and produces negligible std dev vals:
@@ -484,7 +529,6 @@ for (i in 1:nClassA){
     h = hist(A[A<max(figBreaks/reducer)], figBreaks/reducer, plot=F)
     jA = jitter(A) # to prevent ties in the following GOF tests
     pGOF = suppressWarnings(GOF(pFit, h, jA))
-  
     
     # add histogram information to table to be in plot:
     if (j == 1){
@@ -502,10 +546,9 @@ for (i in 1:nClassA){
     # global 
     gpRSSAextrap = RSSAextrapolater(gpFit, fOaMean, fOaSD, Amin, Amax, N=1, sumA)
     
-print(pRSSAextrap$MCAlpha)
     
     # calculate the % of land surface occupied by rivers and streams: 
-    obs_prcnt = 100*sumA*reducer*1e-6/basinArea[i]
+    obs_pcnt = 100*sumA*reducer*1e-6/basinArea[i]
     pRSSA_prcnt = 100*pRSSAextrap$meanRSSA/basinArea[i]
     pRSSA_MC_prct = 100*pRSSAextrap$MCRSSA/basinArea[i]
     gpRSSA_prcnt = 100*gpRSSAextrap$meanRSSA/basinArea[i]
@@ -596,7 +639,7 @@ print(RSSA_km2)
 print(100*RSSA_km2/sum(mnTab$basinA_km2))
 
 ##############################################################################
-# Plot Fig. S6: Pareto fits in each Class A basin
+# Class A: Plot Fig. S6: Pareto fits 
 ##############################################################################
 
 # read in sorted table of N GRWL obs in each hBasin: 
@@ -705,7 +748,7 @@ system(cmd)
 
 
 ##############################################################################
-# Plot Fig. 3C: Pareto extrapolations in Class A basins
+# Class A: Plot Fig. 3C: Pareto extrapolations
 ##############################################################################
 
 # read in ensemble plots:
@@ -842,7 +885,7 @@ system(cmd)
 
 
 ##############################################################################
-# Calculate RSSA in Class B hydroBASINs
+# Class B: Calculate RSSA
 ##############################################################################
 # In Class B basins, Class B basins contain an intermediate amount of GRWL 
 # data, specifically between 10,000 and 250,000 river measurements. The same 
@@ -1068,7 +1111,7 @@ print(100*RSSA_km2/sum(mnTab$basinA_km2))
 
 
 ##############################################################################
-# Plot Fig. SX: Pareto fits in Class B basins
+# Class B: Plot Fig. SX: Pareto fits
 ##############################################################################
 
 # set up output pdf:
@@ -1183,7 +1226,7 @@ system(cmd)
 
 
 ##############################################################################
-# Plot Fig. 3D: Pareto extrapolations in Class B basins
+# Class B: Plot Fig. 3D: Pareto extrapolations
 ##############################################################################
 
 # set up output pdf:
@@ -1330,7 +1373,7 @@ system(cmd)
 
 
 ##############################################################################
-# Attach mnTab & sdTab attributes to hydroBASIN shapefile:
+# Attach Class A & B attributes to hydroBASIN shapefile
 ##############################################################################
 # set mn and sd table paths:
 mnTabP = paste0(wd, 'output/figs/figSX_SAfits_classAB_MCmn.csv')
@@ -1350,18 +1393,18 @@ ensembleTabPath = sub(GRWLpath, paste0(tabDirPath, 'ensembleOutputTabs/'), class
 
 # run this short calculation if Class A & B basins have been regenerated:
 io = 1; if (io == 1){
-  for (i in 1:length(classAB_fN)){
+  for (i in 1:20){#length(classAB_fN)){
     # read in table containing stastistical results of each Monte Carlo simulation
     # run and take mean and stdev of ensembles:
     print(i)
-    classAensembleTab = read.csv(ensembleTabPath[i], header=T)
-  
+    enTab = read.csv(ensembleTabPath[i], header=T)
+    
     if (i == 1){
-      mnTab = as.data.frame(t(colMeans(classAensembleTab, na.rm=T)))
-      sdTab = as.data.frame(t(apply(classAensembleTab, 2, sd, na.rm=T)))
+      mnTab = as.data.frame(t(colMeans(enTab, na.rm=T)))
+      sdTab = as.data.frame(t(apply(enTab, 2, sd, na.rm=T)))
     }else{
-      mnTab = rbind(mnTab, as.data.frame(t(colMeans(classAensembleTab, na.rm=T))))
-      sdTab = rbind(sdTab, as.data.frame(t(apply(classAensembleTab, 2, sd, na.rm=T))))
+      mnTab = rbind(mnTab, as.data.frame(t(colMeans(enTab, na.rm=T))))
+      sdTab = rbind(sdTab, as.data.frame(t(apply(enTab, 2, sd, na.rm=T))))
     }
   }
   
@@ -1372,6 +1415,8 @@ io = 1; if (io == 1){
   sdTab = read.csv(sdTabP, header=T)
 }
 
+
+
 # add column that contains the RSSA valuess used in manuscript:
 classAboo = mnTab$bClass == 1
 classBboo = mnTab$bClass == 2
@@ -1380,8 +1425,8 @@ mnTab$RSSA_km2[classBboo] = mnTab$gMCRSSA_km2[classBboo]
 sdTab$RSSA_km2[classAboo] = sdTab$pMCRSSA_km2[classAboo]
 sdTab$RSSA_km2[classBboo] = sdTab$gMCRSSA_km2[classBboo]
 # RSSA percentage basin:
-mnTab$RSSA_pcnt = mnTab$RSSA_km2/mnTab$basinA_km2
-sdTab$RSSA_pcnt = sdTab$RSSA_km2/mnTab$basinA_km2
+mnTab$RSSA_pcnt = 100*mnTab$RSSA_km2/mnTab$basinA_km2
+sdTab$RSSA_pcnt = 100*sdTab$RSSA_km2/mnTab$basinA_km2
 # update headers of sdTab to distinguish them from mnTab headers:
 names(sdTab) = paste0("sd_",names(mnTab))
 
@@ -1406,7 +1451,7 @@ write.dbf(newhBASIN, hydroBASINpath)
 
 
 ##############################################################################
-# Calculate RSSA in Class C hydroBASINs
+# Class C: Calculate RSSA 
 ##############################################################################
 # Class C basins contain <10,000 GRWL width measurements ≥90 m, tend to be 
 # small and/or dry basins. For these basins, we develop a relationship between 
@@ -1415,18 +1460,13 @@ write.dbf(newhBASIN, hydroBASINpath)
 # weighted by basin area to interpolate RSSA in (Fig. 3E). Larger basins have 
 # a larger percent %RSSA because they contain higher-order rivers. Uncertainty 
 # in these basins is based on the 1σ confidence intervals of the multiple 
-# linear regression. 
-
-
-
-# Exploring the relationships between various physigraphic varibles
-# and the percentage of surface area within a basin:
-
-# library(zyp)
-# library(RColorBrewer)
+# linear regression. Use climate-%RSSA regression to fill in missing basins 
+# in hydroBASINs shapefile:
 
 # To produce aridity table, downloaded Zomer et al., 2007 and 
 # in ArcMap --> ArcToolbox --> Zonal Statistics as Table --> Export as DBF
+# read in aridity table:
+aridity = foreign::read.dbf(aridityPath)
 
 # read in and process hydroBasin table:
 hBASIN = foreign::read.dbf(hydroBASINpath)
@@ -1435,139 +1475,122 @@ if ("fit" %in% names(hBASIN)){hBASIN = hBASIN[ ,(1:30)]}
 if (!'FID' %in% names(hBASIN)){ 
   FID = 1:nrow(hBASIN)-1; hBASIN = cbind(FID, hBASIN) 
 }
-# determine which basins are of Class A & B:
-classABboo = hBASIN$bClass > 0
 
-# read in aridity table:
-aridity = foreign::read.dbf(aridityPath)
-
-x1 = aridity$MEAN[match(hBASIN$FID[classABboo], aridity$FID_)] 
-x2 = hBASIN$area_km2[classABboo]
-y = 100*hBASIN$RSSA_pcnt[classABboo]
-w = hBASIN$area_km2[classABboo]
-
-# fit a weighted multiple linear regression to aridity, basin size, and %SA data:
-fit = lm(log(y)~log(x1)+log(x2), weights=w); print(summary(fit))
-
-# confidence interval = 1 sigma (0.68):
-fitFun <- function(x1, x2, fit){
-  return(exp(predict(fit, data.frame(x1=x1, x2=x2), interval="confidence", level=0.68)))
-}
-
-
-
-
-# Plot multiple regression (Fig. 3E)
-pdfOut = paste0(wd, 'output/figs/fig3E_ClassC_regression.pdf')
-pdf(pdfOut,  width=3, height=2.4)
-layoutTab = rbind(c(1,1,1,1,2))
-layout(layoutTab)
-par(mar=c(5.1,4.1,1,1))
-
-# create plotting table:
-tab = data.frame(x1, x2, y, w)
-yRange = c(0, 3)
-xRange = c(0, 2.2e4)
-# Aridity index vs River Area plot:
-# rescale dot radius for plot:
-dSize = 2*sqrt(w/pi)
-dotSize = dSize - min(dSize)+100
-with(tab, symbols(x1, y, 
-                  circles=dotSize, inches=0.12, 
-                  bg=rgb(0,0,0,.3), fg=NA, 
-                  xlim=xRange, ylim=yRange,
-                  main="", xlab="Aridity Index (AI)", ylab = "%RSSA", cex.lab=0.7,
-                  las=1, bty='n', xaxt='n', yaxt='n')); box(lwd=0.5) 
-
-xAxis = seq(xRange[1], xRange[2], length.out=3)
-yAxis =  round(seq(yRange[1], yRange[2], length.out=4))
-axis(1, at=xAxis, labels=formatC(xAxis, digits=0, format="e"), 
-     tcl=-0.5, lwd=0.5, cex.axis=0.7)
-axis(2, at=yAxis, labels=formatC(yAxis, digits=0, format="f"), las=1, 
-     tcl=-0.5, lwd=0.5, cex.axis=0.7)
-# plot regressions:
-xSeq1= seq(xRange[1], xRange[2], length.out=500) #xMin+((0:50)^10/50^10)*(xMax-xMin)
-fitFun1 = fitFun(x1=xSeq1, x2=xSeq2, fit)
-lines(xSeq1, fitFun1[,1], lwd=1)
-lines(xSeq1, fitFun1[,2], lwd=1, lty=3) # lower confidence
-lines(xSeq1, fitFun1[,3], lwd=1, lty=3) # upper confidence
-# add regression equation:
-text(xMin, yMax,  
-     paste0("%RSSA = e^", round(round(fit[[1]][[1]], 1)),
-            " * AI^", round(fit[[1]][[2]],2), 
-            " * BA^", round(fit[[1]][[3]],2)), 
-     cex=0.7, pos=4)
-
-
-# # Basin Area vs River Area plot:
-# with(tab, symbols(x2, y, circles=dotSize, inches=0.12, bg=rgb(0,0,0,0.5), fg=NA, 
-#                   xlim=c(0, max(x2)), ylim=c(0,yMax),main="ED Figure 2b", 
-#                   xlab="Basin Size (km2)", ylab = "Percent River Area (%RSSA)",
-#                   las=1))
-#xMin = 0; xMax = max(x2)
-#xSeq2= seq(xMin, xMax, length.out=500) #xMin+((0:50)^10/50^10)*(xMax-xMin)
-# fitFun2 = fitFun(x1=xSeq1, x2=xSeq2, fit)
-# lines(xSeq2, fitFun2[,1], lwd=1.7)
-# lines(xSeq2, fitFun2[,2], lwd=0.5, lty=2) # lower confidence
-# lines(xSeq2, fitFun2[,3], lwd=0.5, lty=2) # upper confidence
-# text(xMin, yMax,  
-#      paste0("%RSSA = e^", round(round(fit[[1]][[1]], 1)),
-#             " * AI^", round(fit[[1]][[2]],2), 
-#             " * BA^", round(fit[[1]][[3]],2)), pos=4)
-
-
-# add legend:
-par(mar=c(4.1,1,2.1,1))
-par(mai=c(0.4,0,0.2,0))
-
-legendAreas = c(1e5, 5e5, 2e6, 6e6)
-dSizeLeg = 2*sqrt(legendAreas/pi)
-dotSizeLeg = dSizeLeg - min(dSizeLeg)+100
-legendTab = data.frame(x=rep(1, length(legendAreas)), 
-                       y=c(1:length(legendAreas)), legendAreas) 
-suppressWarnings(with(legendTab, symbols(x, rev(y), circles=dotSizeLeg, 
-                                         inches=0.12,  bg=rgb(0,0,0,0.5), fg=NA,
-                                         ylim = c(0, length(legendAreas)+1),
-                                         main="", axes=F, xlab='', ylab='')))
-title("Basin\nArea\n(BA)", line=-2, cex.main=1)
-options(scipen=2)
-text(rep(1, length(legendAreas)), 
-     c(1:length(legendAreas)) + 0.5, 
-     rev(paste(labels=formatC(legendAreas, digits=0, format="e"), "km2")), 
-     pos=1, offset=150*dotSizeLeg/max(dotSizeLeg)-3.5,
-     cex=0.7)
-
-dev.off() 
-cmd = paste('open', pdfOut)
-system(cmd)
-
-summary(fit)
-
-
-
-
-
-
-##############################################################################
-# Calculate RSSA in Class C hydroBASINs
-##############################################################################
-# use climate-%RSSA regression to fill in missing basins in hydroBASINs shapefile:
-
-# set up model X and Y:
-ai = aridity$MEAN[match(hBASIN$FID, aridity$FID_)]
-perRSSA = hBASIN$RSSA_pcnt
+# define model input parameters:
+ai = aridity$MEAN[match(hBASIN$FID, aridity$FID_)] 
 BA = hBASIN$area_km2
 
-# for basins with no surface area estimates, use climate-SA model
-# to estimate %RSSA: 
-modRSSA = as.data.frame(fitFun(ai, BA, fit))
+
+# read in each ensemble tab and concatenate data into one large table:
+# create MC ensemble concatenated table output path:
+conTabP = paste0(wd, 'output/figs/figSX_SAfits_classAB_MCconTab.csv')
+
+# read in sorted table of N GRWL obs in each hBasin: 
+nGRWLperBasTab = read.csv(nGRWLperBasinOutPath, header=T)
+nGRWLperBasTab$fP = paste0(wd, "input/GRWL/GRWL_by_hydroBASIN/", nGRWLperBasTab$fN, ".csv")
+
+# run through all Class A and Class B esemble output files and generate
+# a basin mean and std table:
+classAB_fP = as.character(nGRWLperBasTab$fP[nGRWLperBasTab$nGRWLperBas>10000])
+classAB_fN = nGRWLperBasTab$fN[nGRWLperBasTab$nGRWLperBas>10000]
+
+hTabPath = sub(GRWLpath, paste0(tabDirPath, 'ensembleHistTabs/'), classAB_fP)
+ensembleTabPath = sub(GRWLpath, paste0(tabDirPath, 'ensembleOutputTabs/'), classAB_fP)
+
+# if new ensembles were updated, concatenate all ensemble tables into big tab:
+io = 0; if (io == 1){
+  for (i in 1:length(classAB_fN)){
+    enTab = read.csv(ensembleTabPath[i], header=T)
+    if (i == 1){
+      conTab = enTab
+    }else{
+      conTab = rbind(conTab, enTab)
+    }
+  }
+  write.csv(conTab, conTabP, row.names=F)
+}else{
+  conTab = read.csv(conTabP, header=T)
+}
+# check to make sure the number of conTab rows matches the number of 
+# ensemble runs multiplied by the number of Class A+B basins:
+if (nrow(conTab) != nRun*length(classAB_fN)){ message("problema!") }
+
+# add column that contains the RSSA values used in manuscript:
+classAboo = conTab$bClass == 1
+conTab$RSSA_km2[classAboo] = conTab$pMCRSSA_km2[classAboo]
+conTab$RSSA_km2[!classAboo] = conTab$gMCRSSA_km2[!classAboo]
+conTab$RSSA_pcnt = 100*conTab$RSSA_km2/conTab$basinA_km2
+
+
+# create index sequence:
+iSeq = seq(1, nRun*length(classAB_fN), nRun)
+
+# match ensemble dataset to hBasin and aridity dataset:
+FIDmatchAB = match(conTab$hBASIN_code[iSeq], hBASIN$MAIN_BAS)
+x1 = aridity$MEAN[match(hBASIN$FID[FIDmatchAB], aridity$FID_)]
+x2 = hBASIN$area_km2[FIDmatchAB]
+weight = hBASIN$area_km2[FIDmatchAB]
+
+
+# for each ensemble run develope RSSA-BA-aridity relationship:
+#fitList = list()
+modRSSAtab = as.data.frame(array(NA, c(length(ai), nRun)))
+mnClassBC = sdClassBC = rep(NA, length(nRun))
+for (i in 1:nRun){
+  print(i)
+  iSeq = seq(i, nRun*length(classAB_fN), nRun)
+  y = conTab$RSSA_pcnt[iSeq]
+  # fit a weighted multiple linear regression to RSSA, aridity, BA: 
+  fit = lm(log(y)~log(x1)+log(x2), weights=weight)
+  # and add fit parameters to a list:
+  #fitList[[i]] = lm(log(y)~log(x1)+log(x2), weights=weight)
+  
+  # get an estimate for every basin (rows) for nRuns (cols):
+  modRSSAtab[,i] = fitFun(ai, BA, fit, confInt=NA)
+  #modRSSA = as.data.frame(fitFun(ai, BA, fit, confInt = 0.68))
+}
+
+# sum total global mean RSSA:
+mnClassCtab = rowMeans(modRSSAtab)
+sum(mnClassCtab*hBASIN$area_km2, na.rm=T)
+
+# use this list to estimate RSSA in each Class C basins 
+# (confidence interval = 1 sigma (0.68)):
+
+modRSSA = as.data.frame(fitFun(ai, BA, fit, NA))[1]
+modRSSA[is.na(modRSSA)] = 0
+
+
+
+
+# determine which basins are not Class C:
+classABboo = hBASIN$bClass > 0
+
+# Use GRWL-derived data to train a model for smaller rivers. 
+# Fit a weighted multiple linear regression to aridity, basin size, and %SA data:
+x1 = aridity$MEAN[match(hBASIN$FID[classABboo], aridity$FID_)] 
+x2 = hBASIN$area_km2[classABboo]
+y = hBASIN$RSSA_pcnt[classABboo]
+
+
+fit = lm(log(y)~log(x1)+log(x2), weights=weight); print(summary(fit))
+
+
+# for basins with no surface area estimates, use climate-RSSA model
+# define model parameters:
+ai = aridity$MEAN[match(hBASIN$FID, aridity$FID_)] 
+RSSA_pc = hBASIN$RSSA_pcnt
+BA = hBASIN$area_km2
+
+# to estimate %RSSA - confidence interval = 1 sigma (0.68):
+modRSSA = as.data.frame(fitFun(ai, BA, fit, 0.68))
 modRSSA[is.na(modRSSA)] = 0
 
 # Fill in areas and uncertainty from area extrapolations and 
 # combine error from area extrapolation and climate interpolation:
-modRSSA$fit[perRSSA!=0] = perRSSA[perRSSA!=0]
-modRSSA$lwr[perRSSA!=0] = (perRSSA-hBASIN$sd_RSSA_pc)[perRSSA!=0]
-modRSSA$upr[perRSSA!=0] = (perRSSA+hBASIN$sd_RSSA_pc)[perRSSA!=0]
+modRSSA$fit[RSSA_pc!=0] = RSSA_pc[RSSA_pc!=0]
+modRSSA$lwr[RSSA_pc!=0] = (RSSA_pc-hBASIN$sd_RSSA_pc)[RSSA_pc!=0]
+modRSSA$upr[RSSA_pc!=0] = (RSSA_pc+hBASIN$sd_RSSA_pc)[RSSA_pc!=0]
 modRSSA$uncertainty = modRSSA$fit - modRSSA$lwr
 
 # set greenland icesheet to zero:
@@ -1577,14 +1600,13 @@ modRSSA[substr(hBASIN$MAIN_BAS, 1,1) == "9", ] = 0
 climResids = rep(-999, nrow(hBASIN))
 climResids[classABboo] = fit$residuals
 
-hBASIN$RSSA_pcnt[perRSSA==0] = modRSSA$fit[perRSSA==0]
-hBASIN$RSSA_km2[perRSSA==0] = modRSSA$fit[perRSSA==0]*hBASIN$area_km2[perRSSA==0]
-hBASIN$sd_RSSA_pc[perRSSA==0] = modRSSA$uncertainty[perRSSA==0]
-hBASIN$sd_RSSA_km[perRSSA==0] = modRSSA$uncertainty[perRSSA==0]*hBASIN$area_km2[perRSSA==0]
+hBASIN$RSSA_pcnt[RSSA_pc==0] = modRSSA$fit[RSSA_pc==0]
+hBASIN$RSSA_km2[RSSA_pc==0] = modRSSA$fit[RSSA_pc==0]*hBASIN$area_km2[RSSA_pc==0]
+hBASIN$sd_RSSA_pc[RSSA_pc==0] = modRSSA$uncertainty[RSSA_pc==0]
+hBASIN$sd_RSSA_km[RSSA_pc==0] = modRSSA$uncertainty[RSSA_pc==0]*hBASIN$area_km2[RSSA_pc==0]
 
 # add how each basin %RSSA was estimated: 
-hBASIN$bClass[perRSSA==0] = 3
-#SAestMeth[ order(hBASIN$nObs, decreasing=T)[1:20]] = "source"
+hBASIN$bClass[RSSA_pc==0] = 3
 
 range(modRSSA$fit)
 sum(hBASIN$RSSA_km2[classABboo])
@@ -1648,16 +1670,108 @@ if ("fit" %in% names(hBASIN)){hBASIN = hBASIN[ ,(1:32)]}
 
 
 
+##############################################################################
+# Class C: Plot Fig. 3E Climate-RSSA multiple regresion
+##############################################################################
+# plot RSSA, BA and aridity (Fig. 3E):
 
+# read in aridity table:
+aridity = foreign::read.dbf(aridityPath)
 
+# read in and process hydroBasin table:
+hBASIN = foreign::read.dbf(hydroBASINpath)
+if ("fit" %in% names(hBASIN)){hBASIN = hBASIN[ ,(1:30)]}
+# add FID column to hBASIN table to match up data:
+if (!'FID' %in% names(hBASIN)){ 
+  FID = 1:nrow(hBASIN)-1; hBASIN = cbind(FID, hBASIN) 
+}
 
+# determine which basins are not Class C:
+classABboo = hBASIN$bClass > 0
 
+# read in aridity table:
+aridity = foreign::read.dbf(aridityPath)
 
+# fit a weighted multiple linear regression to RSSA, aridity, BA:
+x1 = aridity$MEAN[match(hBASIN$FID[classABboo], aridity$FID_)] 
+x2 = hBASIN$area_km2[classABboo]
+y = 100*hBASIN$RSSA_pcnt[classABboo]
+sdY = 100*hBASIN$sd_RSSA_p[classABboo]
+weight = hBASIN$area_km2[classABboo]
 
+fit = lm(log(y)~log(x1)+log(x2), weights=weight); print(summary(fit))
 
+# Plot multiple regression (Fig. 3E)
+pdfOut = paste0(wd, 'output/figs/fig3E_ClassC_regression.pdf')
+pdf(pdfOut,  width=3, height=2.4)
+layoutTab = rbind(c(1,1,1,1,2))
+layout(layoutTab)
+par(mar=c(5.1,4.1,1,1))
 
+# create plotting table:
+tab = data.frame(x1, x2, y, weight)
+yRange = c(0,5)
+xRange = c(0, 2.2e4)
+# Aridity index vs River Area plot:
+# rescale dot radius for plot:
+dSize = 2*sqrt(weight/pi)
+dotSize = dSize - min(dSize)+100
+with(tab, symbols(x1, y, 
+                  circles=dotSize, inches=0.12, 
+                  bg=rgb(0,0,0,.3), fg=NA, 
+                  xlim=xRange, ylim=yRange,
+                  main="", xlab="Aridity Index (AI)", ylab = "%RSSA", cex.lab=0.7,
+                  las=1, bty='n', xaxt='n', yaxt='n')); box(lwd=0.5) 
+segments(x1, y-sdY, x1, y+sdY,
+         col=rgb(0,0,0,0.2))
 
+xTx = seq(xRange[1], xRange[2], length.out=5)
+xAxis = seq(xRange[1], xRange[2], length.out=3)
+axis(1, at=xTx, labels=NA, lwd=0.5, cex.axis=0.7)
+axis(1, at=xAxis, labels=formatC(xAxis, digits=0, format="e"), 
+     lwd=0.5, cex.axis=0.7)
+yTx =  seq(yRange[1], yRange[2], length.out=7)
+yAxis =  round(seq(yRange[1], yRange[2], length.out=4))
+axis(2, at=yTx, labels=NA, las=1, lwd=0.5, cex.axis=0.7)
+axis(2, at=yAxis, labels=formatC(yAxis, digits=0, format="f"), las=1, 
+     lwd=0.5, cex.axis=0.7)
+# plot regressions:
+xSeq1= seq(xRange[1], xRange[2], length.out=500) #xMin+((0:50)^10/50^10)*(xMax-xMin)
+fitFun1 = fitFun(x1=xSeq1, x2=xSeq2, fit)
+lines(xSeq1, fitFun1[,1], lwd=1)
+lines(xSeq1, fitFun1[,2], lwd=1, lty=3) # lower confidence
+lines(xSeq1, fitFun1[,3], lwd=1, lty=3) # upper confidence
+# add regression equation:
+text(xMin, yMax,  
+     paste0("%RSSA = e^", round(round(fit[[1]][[1]], 1)),
+            " * AI^", round(fit[[1]][[2]],2), 
+            " * BA^", round(fit[[1]][[3]],2)), 
+     cex=0.7, pos=4)
 
+# add legend:
+par(mar=c(4.1,1,2.1,1))
+par(mai=c(0.4,0,0.2,0))
 
+legendAreas = c(1e5, 5e5, 2e6, 6e6)
+dSizeLeg = 2*sqrt(legendAreas/pi)
+dotSizeLeg = dSizeLeg - min(dSizeLeg)+100
+legendTab = data.frame(x=rep(1, length(legendAreas)), 
+                       y=c(1:length(legendAreas)), legendAreas) 
+suppressWarnings(with(legendTab, symbols(x, rev(y), circles=dotSizeLeg, 
+                                         inches=0.12,  bg=rgb(0,0,0,0.5), fg=NA,
+                                         ylim = c(0, length(legendAreas)+1),
+                                         main="", axes=F, xlab='', ylab='')))
+title("Basin\nArea\n(BA)", line=-2, cex.main=1)
+options(scipen=2)
+text(rep(1, length(legendAreas)), 
+     c(1:length(legendAreas)) + 0.5, 
+     rev(paste(labels=formatC(legendAreas, digits=0, format="e"), "km2")), 
+     pos=1, offset=150*dotSizeLeg/max(dotSizeLeg)-3.5,
+     cex=0.7)
 
+dev.off() 
+cmd = paste('open', pdfOut)
+system(cmd)
+
+summary(fit)
 
