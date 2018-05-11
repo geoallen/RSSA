@@ -88,7 +88,7 @@ minNobs = 2.5e5  # minimum number of GRWL observations in a basin for analysis
 minElev = 0 # include rivers above this elevation (m)
 hMax = 10725 # maximum limit to Class A histogram graphs
 figBreaks = seq(Amin, hMax+int, int)*reducer
-nRun = 500# number of Monte Carlo simulation ensemble runs
+nRun = 500 # number of Monte Carlo simulation ensemble runs
 # set lower extrapolation bounds from Allen et al. (2018): 
 # https://doi.org/10.1038/s41467-018-02991-w : 
 fOaMean = 0.321*mL # mean of the median widths of 1st order streams
@@ -101,12 +101,14 @@ aFit = list(
   alpha=0.9034167, # class A basins with most obs, min elev = 0
   stdev=0.06285026 # class A basins with most obs, min elev = 0
 ) 
-# from Monte Carlo derived mean:
-# aFit = list(
-#   xm = 3259.274, #mnTab$pXmin,
-#   alpha = 1.019686, #mnTab$pMCalpha,
-#   stdev = 0.1213816 #sdTab$pMCalpha
-# )
+
+# specify plotting parameters for Class C basin regression:
+yRange = c(0,3)
+xRange = c(0, 2.2e4)
+NxSeq = 100
+xSeq1 = seq(xRange[1], xRange[2], length.out=NxSeq)
+xSeq2 = seq(min(x2), max(x2), length.out=NxSeq)
+confInt = 0.68
 
 # create large table to store outputs of each Monte Carlo enseble run:
 ensembleTabNames = c("hBASIN_code", 
@@ -392,7 +394,7 @@ classAB_MC <- function(nEnsRun, bClass){
   
   # determine basin class:
   if (bClass==1){ classAB_fN=classA_fN }
-  if (bClass==1){ classAB_fN=classB_fN }
+  if (bClass==2){ classAB_fN=classB_fN }
   
   # Monte Carlo error propogation:
   for (j in 1:nRun){
@@ -1003,7 +1005,7 @@ classB_fN = nGRWLperBasTab$fN[classBboo]
 nClassB = length(classB_fP)
 print(paste("Class B Basins:", paste(classB_fN, collapse=" ")))
 #mnTabP = paste0(wd, 'output/figs/figSX_SAfits_classB_MCmn.csv')
-#sdTabP = paste0(wd, 'output/figs/figSX_SAfits_classB_MCsd.csv')
+sdTabP = paste0(wd, 'output/figs/figSX_SAfits_classB_MCsd.csv')
 hTabPath = sub(GRWLpath, paste0(tabDirPath, 'ensembleHistTabs/'), classB_fP)
 ensembleTabPath = sub(GRWLpath, paste0(tabDirPath, 'ensembleOutputTabs/'), classB_fP)
 # unperturbed histogram and parameter table:
@@ -1032,7 +1034,7 @@ for (i in 1:nClassB){
   
   # use original unperturbed GRWL data to get mean RSSA estimate:
   print("Getting raw unperturbed parameters...")
-  mnList = classAB_MC(nEnsRun=1, bClass=1)
+  mnList = classAB_MC(nEnsRun=1, bClass=2)
   
   # concatenate mnList into one large table for all Class A basins:
   print("Running Monte Carlo Simulation to get parameter uncertainty..")
@@ -1040,7 +1042,7 @@ for (i in 1:nClassB){
   mnEnsTab[i,] = mnList$ensembleTab
   
   # Monte Carlo error propogation to estimate uncertainty:
-  MClist = classAB_MC(nEnsRun=nRun, bClass=1)
+  MClist = classAB_MC(nEnsRun=nRun, bClass=2)
   
   # write out ensemble histogram table:
   write.csv(MClist$hTab, hTabPath[i], row.names=F)
@@ -1056,25 +1058,6 @@ print(new)
 names(mnHtab) = round(figBreaks)
 write.csv(mnHtab, mnHtabPath, row.names=F)
 write.csv(mnEnsTab, mnEnsTabPath, row.names=F)
-
-# add up the total observed & extrapolated river surface area in Class A basins:
-# classB_obs_gt90m = sum(mnTab$obRSSAgt90_km2)
-# classB_obs = sum(mnTab$obRSSA_km2)
-# classB_RSSA = sum(mnTab$bRSSA_km2)
-# classB_BasinA = sum(mnTab$BA_km2)
-# print(paste("Class B basins observed %RSSA widths >90m:", round(100*classB_obs_gt90m/classB_BasinA,2), "%"))
-# print(paste("Class B basins observed %RSSA all widths:", round(100*classB_obs/classB_BasinA,2), "%"))
-# print(paste("Class B basins extrapolated %RSSA:", round(100*classB_RSSA/classB_BasinA,2), "%"))
-# 
-# # add uncertainty:
-# RSSA_km2 = round(c(sum(as.numeric(mnTab$bRSSA_km2)),
-#                    + sum(as.numeric(sdTab$bRSSA_km2)),
-#                    sum(as.numeric(sdTab$bRSSA_km2))))
-# 
-# print("extrapolated Class B RSSA:")
-# print(RSSA_km2)
-# print(100*RSSA_km2/sum(mnTab$BA_km2))
-
 
 
 ##############################################################################
@@ -1346,6 +1329,7 @@ system(cmd)
 ##############################################################################
 # Attach Class A & B attributes to hydroBASIN shapefile
 ##############################################################################
+# Allows for the examination of RSSA spatial distribution in Class A&B Basins:
 
 # read in sorted table of N GRWL obs in each hBasin: 
 nGRWLperBasTab = read.csv(nGRWLperBasinOutPath, header=T)
@@ -1359,14 +1343,23 @@ ensembleTabPath = sub(GRWLpath, paste0(tabDirPath, 'ensembleOutputTabs/'), class
 
 # read in non-perturbed mnEnsTab used to establish mean alpha for 
 # Class A and Class B basins: 
-mnEnsTabPath =  paste0(tabDirPath, 'nonEnsRunTabs/classA_nonEnsMnTab.csv')
-mnTab = read.csv(mnEnsTabPath, header=T)
-mnEnsTabPath =  paste0(tabDirPath, 'nonEnsRunTabs/classB_nonEnsMnTab.csv')
-mnTab = rbind(mnTab, read.csv(mnEnsTabPath, header=T))
+mnEnsTabPathAB =  paste0(tabDirPath, 'nonEnsRunTabs/classAB_nonEnsMnTab.csv')
+io = 0; if (io == 1){
+  mnEnsTabPath =  paste0(tabDirPath, 'nonEnsRunTabs/classA_nonEnsMnTab.csv')
+  mnTabA = read.csv(mnEnsTabPath, header=T)
+  mnEnsTabPath =  paste0(tabDirPath, 'nonEnsRunTabs/classB_nonEnsMnTab.csv')
+  mnTabB = read.csv(mnEnsTabPath, header=T)
+  mnTab = rbind(mnTabA, mnTabB)
+  write.csv(mnTab, mnEnsTabPathAB, row.names=F)
+}else{
+  mnTab = read.csv(mnEnsTabPathAB, header=T)
+}
 
 # run this short calculation if Class A & B basins have been regenerated:
 # read in table containing stastistical results of each Monte Carlo simulation
 # run and take stdev of ensembles:
+sdTabP = paste0(figDirPath, 'figSX_SAfits_classAB_MCsd.csv')
+
 io = 0; if (io == 1){
   for (i in 1:length(classAB_fN)){
     print(i)
@@ -1410,7 +1403,6 @@ for (i in 1:length(matchInd)){
 newhBASIN = as.data.frame(cbind(hBASIN, bindTab))
 newhBASIN[is.na(newhBASIN)] = 0
 newhBASIN = data.matrix(newhBASIN)
-
 write.dbf(newhBASIN, hydroBASINpath)
 
 
@@ -1428,10 +1420,8 @@ write.dbf(newhBASIN, hydroBASINpath)
 # linear regression. Use climate-%RSSA regression to fill in missing basins 
 # in hydroBASINs shapefile:
 
-# To produce aridity table, downloaded Zomer et al., 2007 and 
-# in ArcMap --> ArcToolbox --> Zonal Statistics as Table --> Export as DBF
-# read in aridity table:
-aridity = foreign::read.dbf(aridityPath)
+# create MC ensemble concatenated table output path:
+conTabP = paste0(wd, 'output/figs/figSX_SAfits_classAB_MCconTab.csv')
 
 # read in and process hydroBasin table:
 hBASIN = foreign::read.dbf(hydroBASINpath)
@@ -1441,51 +1431,88 @@ if (!'FID' %in% names(hBASIN)){
   FID = 1:nrow(hBASIN)-1; hBASIN = cbind(FID, hBASIN) 
 }
 
-# define model input parameters:
-ai = aridity$MEAN[match(hBASIN$FID, aridity$FID_)] 
-BA = hBASIN$area_km2
-
-
-# read in each ensemble tab and concatenate data into one large table:
-# create MC ensemble concatenated table output path:
-conTabP = paste0(wd, 'output/figs/figSX_SAfits_classAB_MCconTab.csv')
-
 # read in sorted table of N GRWL obs in each hBasin: 
 nGRWLperBasTab = read.csv(nGRWLperBasinOutPath, header=T)
 nGRWLperBasTab$fP = paste0(wd, "input/GRWL/GRWL_by_hydroBASIN/", nGRWLperBasTab$fN, ".csv")
 
-# run through all Class A and Class B esemble output files and generate
+# run through all Class A and Class B ensemble output files and generate
 # a basin mean and std table:
 classAB_fP = as.character(nGRWLperBasTab$fP[nGRWLperBasTab$nGRWLperBas>10000])
 classAB_fN = nGRWLperBasTab$fN[nGRWLperBasTab$nGRWLperBas>10000]
-
-hTabPath = sub(GRWLpath, paste0(tabDirPath, 'ensembleHistTabs/'), classAB_fP)
 ensembleTabPath = sub(GRWLpath, paste0(tabDirPath, 'ensembleOutputTabs/'), classAB_fP)
 
-# if new ensembles were updated, concatenate all ensemble tables into big tab:
+# label Class C basins:
+classABboo = hBASIN$bClass == 1 | hBASIN$bClass == 2
+classCboo = !classABboo
+hBASIN$bClass[classCboo] = 3
+
+# To produce aridity table, downloaded Zomer et al., 2007 and 
+# in ArcMap --> ArcToolbox --> Zonal Statistics as Table --> Export as DBF
+# read in aridity table:
+aridity = foreign::read.dbf(aridityPath)
+
+# define regression inputs:
+AI = aridity$MEAN[match(hBASIN$FID, aridity$FID_)] 
+BA = hBASIN$area_km
+
+# run weight multiple power law regression and get confidence interval 
+# which will be included in uncertainty calc:
+x1 = AI[classABboo]
+x2 = BA[classABboo]
+y = hBASIN$RSSA_pc[classABboo]
+weight = hBASIN$area_km[classABboo]
+fit = lm(log(y)~log(x1)+log(x2), weights=weight)
+mnFitTab = as.data.frame(fitFun(AI, BA, fit, confInt = 0.68))
+
+# create unperturbed mean & conf interval table:
+mnFitL = fitFun(x1=xSeq1, x2=xSeq2, fit, confInt=confInt)
+
+# # Aridity index vs River Area plot:
+# # create plotting table:
+# tab = data.frame(x1, x2, y, weight)
+# # rescale dot radius for plot:
+# dSize = 2*sqrt(weight/pi)
+# dotSize = dSize - min(dSize)+100
+# with(tab, symbols(x1, y,
+#                   circles=dotSize, inches=0.12,
+#                   bg=rgb(0,0,0,.3), fg=NA,
+#                   xlim=xRange, ylim=yRange,
+#                   main="", xlab="Aridity Index (AI)", ylab = "%RSSA", cex.lab=0.7,
+#                   las=1, bty='n')); box(lwd=0.5)
+# # plot regressions:
+
+# lines(xSeq1, mnFitL[,1], lwd=1)
+# lines(xSeq1, mnFitL[,2], lwd=1, lty=3) # lower confidence
+# lines(xSeq1, mnFitL[,3], lwd=1, lty=3) # upper confidence
+
+
+
+# get uncertainty estimate of regression using Monte Carlo simulation: 
+
+# read in each ensemble tab and concatenate data into one large table:
+# if new ClassAB ensembles were updated, concatenate ensembles into big tab:
 io = 0; if (io == 1){
+  print("Generating MC concat table...")
   for (i in 1:length(classAB_fN)){
     enTab = read.csv(ensembleTabPath[i], header=T)
-    if (i == 1){
-      conTab = enTab
-    }else{
-      conTab = rbind(conTab, enTab)
-    }
+    if (i == 1){conTab = enTab
+    }else{ conTab = rbind(conTab, enTab) }
   }
   write.csv(conTab, conTabP, row.names=F)
 }else{
+  print("Reading in MC concat table...")
   conTab = read.csv(conTabP, header=T)
 }
-# check to make sure the number of conTab rows matches the number of 
-# ensemble runs multiplied by the number of Class A+B basins:
-if (nrow(conTab) != nRun*length(classAB_fN)){ message("problema!") }
 
-# add column that contains the RSSA values used in manuscript:
+# add a column to conTab that contains the RSSA values used in manuscript:
 classAboo = conTab$bClass == 1
 conTab$RSSA_km2[classAboo] = conTab$bMCRSSA_km2[classAboo]
 conTab$RSSA_km2[!classAboo] = conTab$aMCRSSA_km2[!classAboo]
 conTab$RSSA_pc = 100*conTab$RSSA_km2/conTab$BA_km2
 
+
+# Continue Monte Carlo simulation using the outputs of class A and B basins
+# as the inputs to the  RSSA-BA-aridity relationship, run with nRun ensembles
 
 # create index sequence:
 iSeq = seq(1, nRun*length(classAB_fN), nRun)
@@ -1496,98 +1523,152 @@ x1 = aridity$MEAN[match(hBASIN$FID[FIDmatchAB], aridity$FID_)]
 x2 = hBASIN$area_km2[FIDmatchAB]
 weight = hBASIN$area_km2[FIDmatchAB]
 
-
-# for each ensemble run develope RSSA-BA-aridity relationship:
-#fitList = list()
-modRSSAtab = as.data.frame(array(NA, c(length(ai), nRun)))
+# for each ensemble run, develope RSSA-BA-aridity relationship:
+modRSSAtabP = paste0(tabDirPath, "input_classC_MC.csv")
+modRSSAtab = as.data.frame(array(NA, c(length(AI), nRun)))
 mnClassBC = sdClassBC = rep(NA, length(nRun))
+# for each ensembel run, develope a table for mean regression plot:
+fitLmean = as.data.frame(array(NA, c(length(xSeq1), nRun)))
+
+
+# # PLOT
+# iSeq = seq(1, nRun*length(classAB_fN), nRun)
+# y = conTab$RSSA_pc[iSeq]
+# tab = data.frame(x1, x2, y, weight)
+# yRange = c(0,3)
+# xRange = c(0, 2.2e4)
+# # Aridity index vs River Area plot:
+# # rescale dot radius for plot:
+# dSize = 2*sqrt(weight/pi)
+# dotSize = dSize - min(dSize)+100
+# 
+# with(tab, symbols(x1, y,
+#                   circles=dotSize, inches=0.12,
+#                   bg=rgb(1,0,0,1), fg=NA,
+#                   xlim=xRange, ylim=yRange,
+#                   main="", xlab="Aridity Index (AI)", ylab = "%RSSA", cex.lab=0.7,
+#                   las=1, bty='n')); box(lwd=0.5)
+# fit = lm(log(y)~log(x1)+log(x2), weights=weight)
+# fitFun1 = fitFun(x1=xSeq1, x2=xSeq2, fit, confInt=confInt)
+# lines(xSeq1, fitFun1[,1], lwd=0.3, col=rgb(1,0,0,1))
+# lines(xSeq1, fitFun1[,2], lwd=1, lty=3, col=rgb(1,0,0,1)) # lower confidence
+# lines(xSeq1, fitFun1[,3], lwd=1, lty=3, col=rgb(1,0,0,1)) # upper confidence
+
+
+
+# slower to read in this huge table than just generate it:
+print('generating regression table...')  
+# fitList = list()
 for (i in 1:nRun){
-  print(i)
+  # print(i)
   iSeq = seq(i, nRun*length(classAB_fN), nRun)
   y = conTab$RSSA_pc[iSeq]
+  
   # fit a weighted multiple linear regression to RSSA, aridity, BA: 
   fit = lm(log(y)~log(x1)+log(x2), weights=weight)
   # and add fit parameters to a list:
-  #fitList[[i]] = lm(log(y)~log(x1)+log(x2), weights=weight)
+  # fitList[[i]] = fit
   
-  # get an estimate for every basin (rows) for nRuns (cols):
-  modRSSAtab[,i] = fitFun(ai, BA, fit, confInt=NA)
-  #modRSSA = as.data.frame(fitFun(ai, BA, fit, confInt = 0.68))
+  # get a RSSA estimate for every basin (rows) for nRuns (cols):
+  fitTab = fitFun(AI, BA, fit, confInt=NA)
+  modRSSAtab[,i] = fitTab
+  
+  # using the above fit, generate three tables (mean regression,
+  # upr, & lwr confidence intervals), for each ensemble:
+  fitLtab = fitFun(xSeq1, xSeq2, fit, confInt=confInt)
+  fitLmean[,i] = fitLtab[,1]
+  
+  # par(new=T)
+  # with(tab, symbols(x1, y,
+  #                   circles=dotSize, inches=0.12,
+  #                   bg=rgb(0,0,1,0.1), fg=NA,
+  #                   xlim=xRange, ylim=yRange,
+  #                   main="", xlab="", ylab = "%RSSA", cex.lab=0.7,
+  #                   las=1, bty='n', xaxt='n', yaxt='n')); box(lwd=0.5)
+  # lines(xSeq1, fitLtab[,1], lwd=0.3, col=rgb(0,0,1,1))
+  # lines(xSeq1, fitLtab[,2], lwd=0.3, lty=3, col=rgb(0,0,1,1)) # lower confidence
+  # lines(xSeq1, fitLtab[,3], lwd=0.3, lty=3, col=rgb(0,0,1,1)) # upper confidence
+  
 }
 
-# sum total global mean RSSA:
-mnClassCtab = rowMeans(modRSSAtab)
-sum(mnClassCtab*hBASIN$area_km2, na.rm=T)
 
-# use this list to estimate RSSA in each Class C basins 
-# (confidence interval = 1 sigma (0.68)):
-
-modRSSA = as.data.frame(fitFun(ai, BA, fit, NA))[1]
-modRSSA[is.na(modRSSA)] = 0
-
-
-
-
-# determine which basins are not Class C:
-classABboo = hBASIN$bClass > 0
-
-# Use GRWL-derived data to train a model for smaller rivers. 
-# Fit a weighted multiple linear regression to aridity, basin size, and %SA data:
-x1 = aridity$MEAN[match(hBASIN$FID[classABboo], aridity$FID_)] 
-x2 = hBASIN$area_km2[classABboo]
-y = hBASIN$RSSA_pc[classABboo]
+# calculate total RSSA uncertainty for Class C basins:
+# take mean of each unperturbed basins:
+unPertModRSSAmn = mnFitTab[,1]
+unPertModRSSAlwr = mnFitTab[,2]
+unPertModRSSAupr = mnFitTab[,3]
+unPertMnConfInt = rowMeans(cbind(unPertModRSSAmn-unPertModRSSAlwr, 
+                               unPertModRSSAupr-unPertModRSSAmn))
+# take standard deviation of each pertubed basin ensemble mean:
+mnModRSSAuncert = t(as.data.frame(t(apply(modRSSAtab, 1, sd, na.rm=T))))
+# calculate combined uncertainty:
+sdModRSSA = unPertMnConfInt + mnModRSSAuncert
+mnModRSSA = mnFitTab[,1]
 
 
-fit = lm(log(y)~log(x1)+log(x2), weights=weight); print(summary(fit))
+# calculate total uncertainty for regression lines:
+# take mean of each unperturbed basins:
+unPertFitLmn = mnFitL[,1]
+# take standard deviation of each pertubed basin ensemble mean:
+mnFitLuncert = t(as.data.frame(t(apply(fitLmean, 1, sd, na.rm=T))))
+# calculate combined uncertainty:
+fitMean = c(mnFitL[,1])
+fitLwr = c(mnFitL[,2] - mnFitLuncert)
+fitUpr = c(mnFitL[,3] + mnFitLuncert)
+
+# write out regression lines:
+fitLinePath = paste0(figDirPath, "fig3E_regressionXY.csv")
+write.csv(cbind(xSeq1, fitMean, fitLwr, fitUpr), fitLinePath, row.names=F)
 
 
-# for basins with no surface area estimates, use climate-RSSA model
-# define model parameters:
-ai = aridity$MEAN[match(hBASIN$FID, aridity$FID_)] 
-RSSA_pc = hBASIN$RSSA_pc
-BA = hBASIN$area_km2
 
-# to estimate %RSSA - confidence interval = 1 sigma (0.68):
-modRSSA = as.data.frame(fitFun(ai, BA, fit, 0.68))
-modRSSA[is.na(modRSSA)] = 0
+# fill in hBASIN tabe:
 
 # Fill in areas and uncertainty from area extrapolations and 
 # combine error from area extrapolation and climate interpolation:
-modRSSA$fit[RSSA_pc!=0] = RSSA_pc[RSSA_pc!=0]
-modRSSA$lwr[RSSA_pc!=0] = (RSSA_pc-hBASIN$sd_RSSA_pc)[RSSA_pc!=0]
-modRSSA$upr[RSSA_pc!=0] = (RSSA_pc+hBASIN$sd_RSSA_pc)[RSSA_pc!=0]
-modRSSA$uncertainty = modRSSA$fit - modRSSA$lwr
+RSSA_pc = hBASIN$RSSA_pc
+sd_RSSA_pc = hBASIN$sd_RSSA_pc
+RSSA_km2 = hBASIN$RSSA_km2
+sd_RSSA_km = hBASIN$sd_RSSA_km
+
+RSSA_pc[classCboo] = mnModRSSA[classCboo]
+sd_RSSA_pc[classCboo] = sdModRSSA[classCboo]
 
 # set greenland icesheet to zero:
-modRSSA[substr(hBASIN$MAIN_BAS, 1,1) == "9", ] = 0
+greenlandBoo = substr(hBASIN$MAIN_BAS, 1,1) == "9"
+RSSA_pc[greenlandBoo] = 0
+sd_RSSA_pc[greenlandBoo] = 0
 
-# add residual to table:
-climResids = rep(-999, nrow(hBASIN))
-climResids[classABboo] = fit$residuals
+# set any NA elements to zero since these are typically in small basins:
+RSSA_pc[is.na(RSSA_pc)] = 0
+sd_RSSA_pc[is.na(sd_RSSA_pc)] = 0
 
-hBASIN$RSSA_pc[RSSA_pc==0] = modRSSA$fit[RSSA_pc==0]
-hBASIN$RSSA_km2[RSSA_pc==0] = modRSSA$fit[RSSA_pc==0]*hBASIN$area_km2[RSSA_pc==0]
-hBASIN$sd_RSSA_pc[RSSA_pc==0] = modRSSA$uncertainty[RSSA_pc==0]
-hBASIN$sd_RSSA_km[RSSA_pc==0] = modRSSA$uncertainty[RSSA_pc==0]*hBASIN$area_km2[RSSA_pc==0]
+# calculate RSSA in terms of km2:
+RSSA_km2[classCboo] = RSSA_pc[classCboo]*hBASIN$area_km2[classCboo]/100
+sd_RSSA_km[classCboo] = sd_RSSA_pc[classCboo]*hBASIN$area_km2[classCboo]/100
 
-# add how each basin %RSSA was estimated: 
-hBASIN$bClass[RSSA_pc==0] = 3
+# print out some important numbers and statistics:
+print(range(RSSA_pc)) # range of basin %RSSA values
+print(sum(RSSA_km2)) # global RSSA
+print(sum(sd_RSSA_km)) # global RSSA error
+print(100*sum(RSSA_km2)/globalLandArea) # global %RSSA
+print(100*sum(sd_RSSA_km)/globalLandArea) # global RSSA error
 
-range(modRSSA$fit)
-sum(hBASIN$RSSA_km2[classABboo])
-sum(hBASIN$RSSA_km2)
 
-globalLandArea = 132773914
-RSSAtab = colSums(BA*(modRSSA/100), na.rm=T)
-print(RSSAtab)
-print(100*RSSAtab/globalLandArea)
-print(100*(RSSAtab[[1]]-RSSAtab[[2]])/globalLandArea)
+# add final RSSA and uncertainty to dbf:
+hBASIN$cRSSA_km2 = RSSA_km2
+hBASIN$sd_cRSSA_km = sd_RSSA_km
+hBASIN$cRSSA_pc = RSSA_pc
+hBASIN$sd_cRSSA_pc = sd_RSSA_pc
 
-length(which(hBASIN$RSSA_km2 != 0))
-mean(hBASIN$pKS_D[classABboo])
-mean(hBASIN$pMCalpha[classABboo])
+# format table for arcmap shapefile and write out dbf:
+hBASIN[is.na(hBASIN)] = 0
+hBASIN = data.matrix(hBASIN)
+write.dbf(hBASIN, hydroBASINpath)
 
-hBASIN = cbind(hBASIN, modRSSA, climResids)
+
+
+
 
 
 # Compare results from previous studies:
@@ -1596,37 +1677,37 @@ raymond_lwr = 399000
 raymond_upr = 673000
 downing_lwr = 585000
 downing_upr = 662000
-hBASIN_mean = RSSAtab[[1]]
-hBASIN_lwr = RSSAtab[[2]]
-hBASIN_upr = RSSAtab[[3]]
+hBASIN_mean = sum(RSSA_km2)
+hBASIN_lwr = sum(RSSA_km2) - sum(sd_RSSA_km)
+hBASIN_upr = sum(RSSA_km2) + sum(sd_RSSA_km)
 
 areaCompareTab = cbind(downing_lwr, downing_upr, raymond_mean, hBASIN_mean)
 par(mar=c(8,5,1,1))
 barplot(areaCompareTab, 
-        ylim=c(0, hBASIN_upr),
+        ylim=c(0, max(c(areaCompareTab, hBASIN_upr))),
         ylab="Global River Area (km)",
         names.arg = c("Downing et al. \n lower",
                       "Downing et al. \n upper",
                       "Raymond et al.",
                       "This study"),
         cex.names=1, las=3, col="light gray")
-#arrows(3.1,raymond_mean,3.1,raymond_lwr, 0.1, 90)
-#arrows(3.1,raymond_mean,3.1,raymond_upr, 0.1, 90)
+arrows(3.1,raymond_mean,3.1,raymond_lwr, 0.1, 90)
+arrows(3.1,raymond_mean,3.1,raymond_upr, 0.1, 90)
 arrows(4.3,hBASIN_mean,4.3,hBASIN_lwr, 0.1, 90)
 arrows(4.3,hBASIN_mean,4.3,hBASIN_upr, 0.1, 90)
 
-perDif = c(round(100*(hBASIN_mean-downing_lwr)/downing_lwr), 
-           round(100*(hBASIN_mean-downing_upr)/downing_upr), 
-           round(100*(hBASIN_mean-raymond_mean)/raymond_mean))
+perDif = c(round(100*(hBASIN_mean-downing_lwr)/hBASIN_mean), 
+           round(100*(hBASIN_mean-downing_upr)/hBASIN_mean), 
+           round(100*(hBASIN_mean-raymond_mean)/hBASIN_mean),
+           round(100*(hBASIN_mean-raymond_lwr)/hBASIN_mean),
+           round(100*(hBASIN_mean-raymond_upr)/hBASIN_mean))
 
-text(c(1,2,3), areaCompareTab[1:3], paste(-perDif, "%"), pos=3)
+text(c(1, 2, 3, 3, 3), as.numeric(cbind(downing_lwr, downing_upr, 
+                                        raymond_mean, raymond_lwr, raymond_upr)), 
+     paste(-perDif, "%"), pos=3)
 
 
-write.dbf(hBASIN, hBASINpath)
 
-
-hBASIN = foreign::read.dbf(hBASINpath)
-if ("fit" %in% names(hBASIN)){hBASIN = hBASIN[ ,(1:32)]}
 
 
 
@@ -1645,17 +1726,14 @@ aridity = foreign::read.dbf(aridityPath)
 
 # read in and process hydroBasin table:
 hBASIN = foreign::read.dbf(hydroBASINpath)
-if ("fit" %in% names(hBASIN)){hBASIN = hBASIN[ ,(1:30)]}
 # add FID column to hBASIN table to match up data:
 if (!'FID' %in% names(hBASIN)){ 
   FID = 1:nrow(hBASIN)-1; hBASIN = cbind(FID, hBASIN) 
 }
 
 # determine which basins are not Class C:
-classABboo = hBASIN$bClass > 0
+classABboo = hBASIN$bClass != 3
 
-# read in aridity table:
-aridity = foreign::read.dbf(aridityPath)
 
 # fit a weighted multiple linear regression to RSSA, aridity, BA:
 x1 = aridity$MEAN[match(hBASIN$FID[classABboo], aridity$FID_)] 
