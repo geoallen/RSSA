@@ -104,7 +104,7 @@ aFit = list(
 
 # specify plotting parameters for Class C basin regression:
 yRange = c(0,3)
-xRange = c(0, 2.2e4)
+xRange = c(0, 2.5e4)
 NxSeq = 100
 xSeq1 = seq(xRange[1], xRange[2], length.out=NxSeq)
 xSeq2 = seq(min(x2), max(x2), length.out=NxSeq)
@@ -824,13 +824,13 @@ basinOrder = match(classA_bNames$bID, classA_fN)
 
 # define plotting bounds:
 xlim = c(fOaMeans[1]*reducer, max(figBreaks))
-ylim = c(1, 1e12)
+ylim = c(1, 1e14)
 
 
 
 # set up output pdf:
 pdfOut = paste0(wd, 'output/figs/figS3b_ClassA_extraps.pdf')
-pdf(pdfOut, width=6, height=4)
+pdf(pdfOut, width=5, height=4)
 par(mfrow=c(4,5))
 par(oma=c(3,3.5,0,0.5), mar=c(0,0,0,0))
 
@@ -1079,7 +1079,7 @@ ylim = c(1, 3e6)
 
 # set up output pdf:
 pdfOut = paste0(wd, 'output/figs/figSX_ClassB_fits.pdf')
-pdf(pdfOut, width=6, height=4)
+pdf(pdfOut, width=5, height=4)
 par(mfrow=c(4,5))
 par(oma=c(3,3.5,0,0.5), mar=c(0,0,0,0))
 
@@ -1189,7 +1189,7 @@ ensembleTabPath = sub(GRWLpath, paste0(tabDirPath, 'ensembleOutputTabs/'), class
 
 # set up output pdf:
 pdfOut = paste0(wd, 'output/figs/figS3b_ClassB_extraps.pdf')
-pdf(pdfOut, width=6, height=4)
+pdf(pdfOut, width=5, height=4)
 par(mfrow=c(4,5))
 par(oma=c(3,3.5,0,0.5), mar=c(0,0,0,0))
 
@@ -1467,23 +1467,22 @@ mnFitTab = as.data.frame(fitFun(AI, BA, fit, confInt = 0.68))
 # create unperturbed mean & conf interval table:
 mnFitL = fitFun(x1=xSeq1, x2=xSeq2, fit, confInt=confInt)
 
-# # Aridity index vs River Area plot:
-# # create plotting table:
-# tab = data.frame(x1, x2, y, weight)
-# # rescale dot radius for plot:
-# dSize = 2*sqrt(weight/pi)
-# dotSize = dSize - min(dSize)+100
-# with(tab, symbols(x1, y,
-#                   circles=dotSize, inches=0.12,
-#                   bg=rgb(0,0,0,.3), fg=NA,
-#                   xlim=xRange, ylim=yRange,
-#                   main="", xlab="Aridity Index (AI)", ylab = "%RSSA", cex.lab=0.7,
-#                   las=1, bty='n')); box(lwd=0.5)
-# # plot regressions:
-
-# lines(xSeq1, mnFitL[,1], lwd=1)
-# lines(xSeq1, mnFitL[,2], lwd=1, lty=3) # lower confidence
-# lines(xSeq1, mnFitL[,3], lwd=1, lty=3) # upper confidence
+# Aridity index vs River Area plot:
+# create plotting table:
+tab = data.frame(x1, x2, y, weight)
+# rescale dot radius for plot:
+dSize = 2*sqrt(weight/pi)
+dotSize = dSize - min(dSize)+100
+with(tab, symbols(x1, y,
+                  circles=dotSize, inches=0.12,
+                  bg=rgb(0,0,0,.3), fg=NA,
+                  xlim=xRange, ylim=yRange,
+                  main="", xlab="Aridity Index (AI)", ylab = "%RSSA", cex.lab=0.7,
+                  las=1, bty='n')); box(lwd=0.5)
+# plot regressions:
+lines(xSeq1, mnFitL[,1], lwd=1)
+lines(xSeq1, mnFitL[,2], lwd=1, lty=3) # lower confidence
+lines(xSeq1, mnFitL[,3], lwd=1, lty=3) # upper confidence
 
 
 
@@ -1499,7 +1498,8 @@ io = 0; if (io == 1){
     }else{ conTab = rbind(conTab, enTab) }
   }
   write.csv(conTab, conTabP, row.names=F)
-}else{
+}
+if (!exists('conTab')){
   print("Reading in MC concat table...")
   conTab = read.csv(conTabP, header=T)
 }
@@ -1541,7 +1541,6 @@ fitLmean = as.data.frame(array(NA, c(length(xSeq1), nRun)))
 # # rescale dot radius for plot:
 # dSize = 2*sqrt(weight/pi)
 # dotSize = dSize - min(dSize)+100
-# 
 # with(tab, symbols(x1, y,
 #                   circles=dotSize, inches=0.12,
 #                   bg=rgb(1,0,0,1), fg=NA,
@@ -1556,17 +1555,17 @@ fitLmean = as.data.frame(array(NA, c(length(xSeq1), nRun)))
 
 
 
-# slower to read in this huge table than just generate it:
+# faster to generate this huge table than to read it in:
 print('generating regression table...')  
 # fitList = list()
 for (i in 1:nRun){
   # print(i)
   iSeq = seq(i, nRun*length(classAB_fN), nRun)
   y = conTab$RSSA_pc[iSeq]
+  tab$y = y
   
   # fit a weighted multiple linear regression to RSSA, aridity, BA: 
   fit = lm(log(y)~log(x1)+log(x2), weights=weight)
-  # and add fit parameters to a list:
   # fitList[[i]] = fit
   
   # get a RSSA estimate for every basin (rows) for nRuns (cols):
@@ -1615,6 +1614,9 @@ mnFitLuncert = t(as.data.frame(t(apply(fitLmean, 1, sd, na.rm=T))))
 fitMean = c(mnFitL[,1])
 fitLwr = c(mnFitL[,2] - mnFitLuncert)
 fitUpr = c(mnFitL[,3] + mnFitLuncert)
+# plot new confidence intervals:
+lines(xSeq1, fitLwr, lwd=1, col=2, lty=3) # lower confidence
+lines(xSeq1, fitUpr, lwd=1, col=2, lty=3) # upper confidence
 
 # write out regression lines:
 fitLinePath = paste0(figDirPath, "fig3E_regressionXY.csv")
@@ -1649,10 +1651,11 @@ sd_RSSA_km[classCboo] = sd_RSSA_pc[classCboo]*hBASIN$area_km2[classCboo]/100
 
 # print out some important numbers and statistics:
 print(range(RSSA_pc)) # range of basin %RSSA values
+
 print(sum(RSSA_km2)) # global RSSA
 print(sum(sd_RSSA_km)) # global RSSA error
 print(100*sum(RSSA_km2)/globalLandArea) # global %RSSA
-print(100*sum(sd_RSSA_km)/globalLandArea) # global RSSA error
+print(100*sum(sd_RSSA_km)/globalLandArea) # global %RSSA error
 
 
 # add final RSSA and uncertainty to dbf:
@@ -1671,7 +1674,7 @@ write.dbf(hBASIN, hydroBASINpath)
 
 
 
-# Compare results from previous studies:
+# Plot comparison results between studies:
 raymond_mean = 536000
 raymond_lwr = 399000
 raymond_upr = 673000
@@ -1685,7 +1688,7 @@ areaCompareTab = cbind(downing_lwr, downing_upr, raymond_mean, hBASIN_mean)
 par(mar=c(8,5,1,1))
 barplot(areaCompareTab, 
         ylim=c(0, max(c(areaCompareTab, hBASIN_upr))),
-        ylab="Global River Area (km)",
+        ylab="Global RSSA (km2)",
         names.arg = c("Downing et al. \n lower",
                       "Downing et al. \n upper",
                       "Raymond et al.",
@@ -1709,13 +1712,6 @@ text(c(1, 2, 3, 3, 3), as.numeric(cbind(downing_lwr, downing_upr,
 
 
 
-
-
-
-
-
-
-
 ##############################################################################
 # Class C: Plot Fig. 3E Climate-RSSA multiple regresion
 ##############################################################################
@@ -1731,6 +1727,9 @@ if (!'FID' %in% names(hBASIN)){
   FID = 1:nrow(hBASIN)-1; hBASIN = cbind(FID, hBASIN) 
 }
 
+# read in regression lines:
+fitLtab = read.csv(fitLinePath, header=T)
+
 # determine which basins are not Class C:
 classABboo = hBASIN$bClass != 3
 
@@ -1738,10 +1737,9 @@ classABboo = hBASIN$bClass != 3
 # fit a weighted multiple linear regression to RSSA, aridity, BA:
 x1 = aridity$MEAN[match(hBASIN$FID[classABboo], aridity$FID_)] 
 x2 = hBASIN$area_km2[classABboo]
-y = 100*hBASIN$RSSA_pc[classABboo]
-sdY = 100*hBASIN$sd_RSSA_p[classABboo]
+y = hBASIN$cRSSA_pc[classABboo]
+sdY = hBASIN$sd_cRSSA_p[classABboo]
 weight = hBASIN$area_km2[classABboo]
-
 fit = lm(log(y)~log(x1)+log(x2), weights=weight); print(summary(fit))
 
 # Plot multiple regression (Fig. 3E)
@@ -1753,8 +1751,6 @@ par(mar=c(5.1,4.1,1,1))
 
 # create plotting table:
 tab = data.frame(x1, x2, y, weight)
-yRange = c(0,5)
-xRange = c(0, 2.2e4)
 # Aridity index vs River Area plot:
 # rescale dot radius for plot:
 dSize = 2*sqrt(weight/pi)
@@ -1765,27 +1761,26 @@ with(tab, symbols(x1, y,
                   xlim=xRange, ylim=yRange,
                   main="", xlab="Aridity Index (AI)", ylab = "%RSSA", cex.lab=0.7,
                   las=1, bty='n', xaxt='n', yaxt='n')); box(lwd=0.5) 
-segments(x1, y-sdY, x1, y+sdY,
-         col=rgb(0,0,0,0.2))
+# arrows(x1,y,x1,y-sdY, 0.01, 90, lwd=0.3)
+# arrows(x1,y,x1,y+sdY, 0.01, 90, lwd=0.3)
+segments(x1, y-sdY, x1, y+sdY, lwd=0.3, col="dark gray")
 
-xTx = seq(xRange[1], xRange[2], length.out=5)
-xAxis = seq(xRange[1], xRange[2], length.out=3)
-axis(1, at=xTx, labels=NA, lwd=0.5, cex.axis=0.7)
-axis(1, at=xAxis, labels=formatC(xAxis, digits=0, format="e"), 
-     lwd=0.5, cex.axis=0.7)
+# plot mean regression:
+lines(fitLtab$xSeq1, fitLtab$fitMean, lty=1, lwd=0.5) # mean fit
+lines(fitLtab$xSeq1, fitLtab$fitLwr, lty=3, lwd=0.5) # lower confidence
+lines(fitLtab$xSeq1, fitLtab$fitUpr, lty=3, lwd=0.5) # upper confidence
+# add axes:
+#xTx = seq(xRange[1], xRange[2], length.out=5)
+#xAxis = seq(xRange[1], xRange[2], length.out=5)
+#axis(1, at=xTx, labels=NA, lwd=0.5, cex.axis=0.7)
+axis(1, lwd=0.5, cex.axis=0.7)
 yTx =  seq(yRange[1], yRange[2], length.out=7)
 yAxis =  round(seq(yRange[1], yRange[2], length.out=4))
 axis(2, at=yTx, labels=NA, las=1, lwd=0.5, cex.axis=0.7)
 axis(2, at=yAxis, labels=formatC(yAxis, digits=0, format="f"), las=1, 
      lwd=0.5, cex.axis=0.7)
-# plot regressions:
-xSeq1= seq(xRange[1], xRange[2], length.out=500) #xMin+((0:50)^10/50^10)*(xMax-xMin)
-fitFun1 = fitFun(x1=xSeq1, x2=xSeq2, fit)
-lines(xSeq1, fitFun1[,1], lwd=1)
-lines(xSeq1, fitFun1[,2], lwd=1, lty=3) # lower confidence
-lines(xSeq1, fitFun1[,3], lwd=1, lty=3) # upper confidence
 # add regression equation:
-text(xMin, yMax,  
+text(xRange[1], yRange[2],  
      paste0("%RSSA = e^", round(round(fit[[1]][[1]], 1)),
             " * AI^", round(fit[[1]][[2]],2), 
             " * BA^", round(fit[[1]][[3]],2)), 
@@ -1800,10 +1795,12 @@ dSizeLeg = 2*sqrt(legendAreas/pi)
 dotSizeLeg = dSizeLeg - min(dSizeLeg)+100
 legendTab = data.frame(x=rep(1, length(legendAreas)), 
                        y=c(1:length(legendAreas)), legendAreas) 
-suppressWarnings(with(legendTab, symbols(x, rev(y), circles=dotSizeLeg, 
+options(warn=-1)
+with(legendTab, symbols(x, rev(y), circles=dotSizeLeg, 
                                          inches=0.12,  bg=rgb(0,0,0,0.5), fg=NA,
                                          ylim = c(0, length(legendAreas)+1),
-                                         main="", axes=F, xlab='', ylab='')))
+                                         main="", axes=F, xlab='', ylab=''))
+options(warn=0)
 title("Basin\nArea\n(BA)", line=-2, cex.main=1)
 options(scipen=2)
 text(rep(1, length(legendAreas)), 
@@ -1817,4 +1814,3 @@ cmd = paste('open', pdfOut)
 system(cmd)
 
 summary(fit)
-
