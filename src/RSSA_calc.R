@@ -180,7 +180,7 @@ nGRWLperBasListGenerator <- function(fP, fN, tabDirPath, wMin, minElev, nGRWLper
   write.csv(nGRWLperBasTab, nGRWLperBasinOutPath, row.names=F)
 }
 
-# calculate quantized river surface area at each river observation:
+# calculate downstream river length of each GRWL centerline pixel:
 distCalc <- function(csv){
   # calc along stream length at each width:
   nRow = nrow(csv)
@@ -202,7 +202,6 @@ distCalc <- function(csv){
   return(d)
 }
 
-
 # specialized functions for the pareto fit:
 # code based on Elvis's reply on stackexhange forum:
 # http://stats.stackexchange.com/questions/78168/how-to-know-if-my-data-fits-pareto-distribution
@@ -212,7 +211,6 @@ dpareto <- function(x, xm, a) ifelse(x > 0, a*xm**a/(x**(a+1)), 0)
 ppareto <- function(q, xm, a) ifelse(q > 0, 1 - (xm/q)**a, 0 )
 qpareto <- function(p, xm, a) ifelse(p < 0 | p > 1, NaN, xm*(1-p)**(-1/a))
 rpareto <- function(n, xm, a) qpareto(runif(n), xm, a)
-
 
 # fit pareto distribution to data with MLE:
 pareto.mle <- function(x, std = FALSE){
@@ -237,7 +235,6 @@ pareto.mle <- function(x, std = FALSE){
   return( list(xm = xm, alpha = alpha, stdev=stdev))
   
 }
-
 
 # get uncertainty of MLE fit by using an MLE optimization
 # algorithm to claculate the hessian (rate at which fit
@@ -519,7 +516,7 @@ fitFun <- function(x1, x2, fit, confInt=NA){
   }
 }
 ##############################################################################
-# RivWidth-based error estimate
+# Fig. S6: RivWidth-based error estimate
 ##############################################################################
 # read in error spreadsheet
 valTab = read.csv(valPath, header=T, sep = '\t')
@@ -684,7 +681,7 @@ write.csv(mnEnsTab, mnEnsTabPath, row.names=F)
 # print(100*RSSA_km2/sum(mnTab$BA_km2))
 
 ##############################################################################
-# Class A: Plot Fig. S6: Pareto fits 
+# Class A: Plot Fig. S7: Pareto fits 
 ##############################################################################
 
 # read in sorted table of N GRWL obs in each hBasin: 
@@ -1668,9 +1665,6 @@ hBASIN$sd_cRSSA_pc = sd_RSSA_pc
 hBASIN[is.na(hBASIN)] = 0
 hBASIN = data.matrix(hBASIN)
 write.dbf(hBASIN, hydroBASINpath)
-
-
-
 
 
 
