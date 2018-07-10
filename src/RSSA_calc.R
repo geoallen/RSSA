@@ -4,7 +4,7 @@
 # George H. Allen
 #
 # Description: 
-# This code calculate River and Stream Surface Area (RSSA) for all non-
+# This code calculates River and Stream Surface Area (RSSA) for all non-
 # glaciated regions globally using the river width and length measurements
 # from the GRWL database. 
 # 
